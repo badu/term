@@ -1,0 +1,56 @@
+package aixterm
+
+import "github.com/badu/term/info"
+
+func init() {
+
+	// IBM Aixterm Terminal Emulator
+	info.AddTerminfo(&info.Term{
+		Name:         "aixterm",
+		Columns:      80,
+		Lines:        25,
+		Colors:       8,
+		Bell:         "\a",
+		Clear:        "\x1b[H\x1b[J",
+		AttrOff:      "\x1b[0;10m\x1b(B",
+		Underline:    "\x1b[4m",
+		Bold:         "\x1b[1m",
+		Reverse:      "\x1b[7m",
+		SetFg:        "\x1b[3%p1%dm",
+		SetBg:        "\x1b[4%p1%dm",
+		SetFgBg:      "\x1b[3%p1%d;4%p2%dm",
+		ResetFgBg:    "\x1b[32m\x1b[40m",
+		PadChar:      "\x00",
+		AltChars:     "jjkkllmmnnqqttuuvvwwxx",
+		EnterAcs:     "\x1b(0",
+		ExitAcs:      "\x1b(B",
+		SetCursor:    "\x1b[%i%p1%d;%p2%dH",
+		CursorBack1:  "\b",
+		CursorUp1:    "\x1b[A",
+		KeyUp:        "\x1b[A",
+		KeyDown:      "\x1b[B",
+		KeyRight:     "\x1b[C",
+		KeyLeft:      "\x1b[D",
+		KeyInsert:    "\x1b[139q",
+		KeyDelete:    "\x1b[P",
+		KeyBackspace: "\b",
+		KeyHome:      "\x1b[H",
+		KeyEnd:       "\x1b[146q",
+		KeyPgUp:      "\x1b[150q",
+		KeyPgDn:      "\x1b[154q",
+		KeyF1:        "\x1b[001q",
+		KeyF2:        "\x1b[002q",
+		KeyF3:        "\x1b[003q",
+		KeyF4:        "\x1b[004q",
+		KeyF5:        "\x1b[005q",
+		KeyF6:        "\x1b[006q",
+		KeyF7:        "\x1b[007q",
+		KeyF8:        "\x1b[008q",
+		KeyF9:        "\x1b[009q",
+		KeyF10:       "\x1b[010q",
+		KeyF11:       "\x1b[011q",
+		KeyF12:       "\x1b[012q",
+		KeyClear:     "\x1b[144q",
+		KeyBacktab:   "\x1b[Z",
+	})
+}
