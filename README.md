@@ -118,3 +118,8 @@ The `Pixel` interface (includes `PixelGetter` and `PixelSetter` interfaces):
 * `ResizeListen() chan ResizeEvent` - `core` uses this channel to send resize events.
 * `DyingChan() chan struct{}` - `core` listens to this channel to check if dispatcher has finished shutdown, upon context cancellation.
 * `InChan() chan []byte` - `core` uses this channel to send input from terminal.
+
+## Package `style`
+
+* `Palette() []color.Color` - returns the known palette
+* `Colors() map[color.Color]color.Color` - returns all colors map

@@ -114,8 +114,7 @@ type Engine interface {
 	NumColors() int                              // returns the number of colors of the current display
 	Size() *Size                                 // returns the size of the current display
 	HasTrueColor() bool                          // returns true if can display true color
-	Palette() []color.Color                      // returns the known palette
-	Colors() map[color.Color]color.Color         // returns all colors map
+	Style() *style.TermStyle                     // returns the terminal styles and palette
 	ActivePixels(pixels []PixelGetter)           // registers the active pixels, forgetting the old ones. This behaviour should be found in Pages
 	Redraw(pixels []PixelGetter)                 // does a buffered redraw of the screen (TODO : should not be used)
 	ShowCursor(where *image.Point)               // shows the cursor at the indicated position

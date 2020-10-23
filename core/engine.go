@@ -74,30 +74,29 @@ func WithTrueColor(trueColor string) Option {
 
 // core represents a screen backed by a info implementation.
 type core struct {
-	sync.Mutex                                   // guards other properties
-	sync.Once                                    // required for registering lifecycle goroutines exactly once
-	size             *term.Size                  //
-	info             *info.Term                  // terminal info
-	termIOSPrv       *termiosPrivate             // required by internalStart
-	in               *os.File                    // input, acquired in internalStart, released in internalShutdown
-	out              *os.File                    // output, acquired in internalStart, released in internalShutdown, used for displaying
-	died             chan struct{}               // this is a buffered channel of size one
-	winSizeCh        chan os.Signal              // listens for resize signals and transforms them into resize events in the dispatcher section
-	receivers        channels                    // We need a slice of channels, on which our listeners will receive those events
-	finalizer        Finalizer                   // Yes, we have callback and we could reuse it, but we will affect readability doing so
-	mouseDispatcher  term.MouseDispatcher        // mouse event dispatcher, exposes via term.Engine interface
-	keyDispatcher    term.KeyDispatcher          // key event dispatcher, exposes via term.Engine interface
-	encoder          transform.Transformer       // used for encoding runes
-	charset          string                      // stores charset for getter
-	fallback         map[rune]string             // runes fallback
-	altChars         map[rune]string             // alternative runes
-	buf              bytes.Buffer                // buffer, works in conjunction with useDrawBuffering (might be removed, due to the nature of pixels)
-	colors           map[color.Color]color.Color // TODO : move this to styles ?
-	palette          []color.Color               // TODO : move this to styles ?
-	cursorPosition   *image.Point                // the position of the cursor, if visible
-	pixCancel        func()                      // allows cancellation of listening to pixels changes
-	hasTrueColor     bool                        // as the name says
-	useDrawBuffering bool                        // true if we are collecting writes to buf instead of sending directly to out
+	sync.Mutex                             // guards other properties
+	sync.Once                              // required for registering lifecycle goroutines exactly once
+	size             *term.Size            //
+	info             *info.Term            // terminal info
+	termIOSPrv       *termiosPrivate       // required by internalStart
+	in               *os.File              // input, acquired in internalStart, released in internalShutdown
+	out              *os.File              // output, acquired in internalStart, released in internalShutdown, used for displaying
+	died             chan struct{}         // this is a buffered channel of size one
+	winSizeCh        chan os.Signal        // listens for resize signals and transforms them into resize events in the dispatcher section
+	receivers        channels              // We need a slice of channels, on which our listeners will receive those events
+	finalizer        Finalizer             // Yes, we have callback and we could reuse it, but we will affect readability doing so
+	mouseDispatcher  term.MouseDispatcher  // mouse event dispatcher, exposes via term.Engine interface
+	keyDispatcher    term.KeyDispatcher    // key event dispatcher, exposes via term.Engine interface
+	encoder          transform.Transformer // used for encoding runes
+	charset          string                // stores charset for getter
+	fallback         map[rune]string       // runes fallback
+	altChars         map[rune]string       // alternative runes
+	buf              bytes.Buffer          // buffer, works in conjunction with useDrawBuffering (might be removed, due to the nature of pixels)
+	style            *style.TermStyle
+	cursorPosition   *image.Point // the position of the cursor, if visible
+	pixCancel        func()       // allows cancellation of listening to pixels changes
+	hasTrueColor     bool         // as the name says
+	useDrawBuffering bool         // true if we are collecting writes to buf instead of sending directly to out
 }
 
 // NewCore returns a Engine that uses the stock TTY interface and POSIX termios, combined with a info description taken from the $TERM environment variable.
@@ -123,8 +122,7 @@ func NewCore(termEnv string, options ...Option) (term.Engine, error) {
 		died:         make(chan struct{}),                    // init of died channel, a buffered channel of exactly one
 		receivers:    make(channels, 0),                      // init the receivers slice of channels which will register themselves for resizing events
 		winSizeCh:    make(chan os.Signal, runtime.NumCPU()), // listening resize events (OS specific)
-		colors:       make(map[color.Color]color.Color),
-		palette:      make([]color.Color, ti.Colors),
+		style:        style.NewTermStyle(ti),
 		charset:      getCharset(),
 		hasTrueColor: hasTrueColor,
 	}
@@ -137,11 +135,6 @@ func NewCore(termEnv string, options ...Option) (term.Engine, error) {
 
 	buildAlternateRunesMap(res)
 	defaultRunesFallback(res)
-
-	for i := 0; i < ti.Colors; i++ {
-		res.palette[i] = color.Color(i) | color.Valid
-		res.colors[color.Color(i)|color.Valid] = color.Color(i) | color.Valid // identity map for our builtin colors
-	}
 
 	for _, o := range options {
 		o(res)
@@ -362,22 +355,6 @@ func (c *core) HasTrueColor() bool {
 	return c.hasTrueColor
 }
 
-// Palette
-func (c *core) Palette() []color.Color {
-	c.Lock()
-	defer c.Unlock()
-
-	return c.palette
-}
-
-// Colors
-func (c *core) Colors() map[color.Color]color.Color {
-	c.Lock()
-	defer c.Unlock()
-
-	return c.colors
-}
-
 // ActivePixels gathers changing channels and listens them inside a goroutine, so we can automatically draw changes and immediately draws all the pixels
 func (c *core) ActivePixels(pixels []term.PixelGetter) {
 	c.Lock()
@@ -483,6 +460,11 @@ func (c *core) Clear() {
 	c.info.PutClear(c.out)
 }
 
+// Style
+func (c *core) Style() *style.TermStyle {
+	return c.style
+}
+
 // resize remembers the width and height of the terminal. if a shutdown flag is set, the pixels listeners are forgot
 func (c *core) resize(w, h int, shutdown bool) {
 	if shutdown && c.pixCancel != nil {
@@ -536,23 +518,11 @@ func (c *core) drawPixel(pixels ...term.PixelGetter) {
 			}
 
 			if fg.Valid() {
-				if v, ok := c.colors[fg]; ok {
-					fg = v
-				} else {
-					v = color.FindColor(fg, c.palette)
-					c.colors[fg] = v
-					fg = v
-				}
+				fg = c.style.FindColor(fg)
 			}
 
 			if bg.Valid() {
-				if v, ok := c.colors[bg]; ok {
-					bg = v
-				} else {
-					v = color.FindColor(bg, c.palette)
-					c.colors[bg] = v
-					bg = v
-				}
+				bg = c.style.FindColor(bg)
 			}
 
 			if fg.Valid() && bg.Valid() && len(c.info.SetFgBg) > 0 {
