@@ -16,7 +16,9 @@ import (
 // for readability
 type channels []chan term.MouseEvent
 
-// delete removes the element at index from channels. This is fast version, but changes order, therefore we cannot rely on index for register / unregister
+// delete removes the element at index from channels.
+// Note that this is the fastest version, which changes order of elements inside the slice
+// Yes, this is repeated code, because avoiding use of interface{}
 func (c *channels) delete(idx int) {
 	(*c)[idx] = (*c)[len(*c)-1] // Copy last element to index i.
 	(*c)[len(*c)-1] = nil       // Erase last element (write zero value).
@@ -53,7 +55,7 @@ type eventDispatcher struct {
 	sync.Mutex                       // guards other properties
 	sync.Once                        // required for registering lifecycle goroutines exactly once
 	info       *info.Term            //
-	size       term.Size             //
+	size       *term.Size            //
 	wasBtn     bool                  //
 	buttonDn   bool                  //
 	inputCh    chan []byte           // channel for listening core.Engine inputs *os.File
@@ -79,11 +81,16 @@ func NewEventDispatcher(options ...Option) (term.MouseDispatcher, error) {
 	}
 
 	if res.info == nil {
-		return nil, errors.New("creator needs to provide me terminal info (hint : use WithTerminalInfo option)")
+		return nil, errors.New("creator needs to provide terminal info (hint : use WithTerminalInfo option)")
 	}
 
+	res.size = &term.Size{
+		Width:  res.info.Width,
+		Height: res.info.Height,
+	}
+	log.Printf("construct mouse dispatcher width = %03d, mouse height = %03d", res.size.Width, res.size.Height)
 	if len(res.info.Mouse) == 0 {
-		return nil, errors.New("terminal info reports no mouse support (hint : creator should not enable mouse or create dispatcher)")
+		return nil, errors.New("terminal info reports NO mouse support (hint : creator should not enable mouse or create dispatcher)")
 	}
 
 	return res, nil
@@ -239,19 +246,19 @@ func (e *eventDispatcher) scanInput(buf *bytes.Buffer) error {
 		}
 
 		// mouse support already checked in the parent (... and constructor)
-		if comp, err := e.readXTerm(buf); err != nil {
+		if isComplete, err := e.readXTerm(buf); err != nil {
 			if Debug {
 				log.Printf("error reading mouse input xterm : %v", err)
 			}
-		} else if comp {
+		} else if isComplete {
 			continue
 		}
 
-		if comp, err := e.readSGR(buf); err != nil {
+		if isComplete, err := e.readSGR(buf); err != nil {
 			if Debug {
 				log.Printf("error reading mouse input xterm : %v", err)
 			}
-		} else if comp {
+		} else if isComplete {
 			continue
 		}
 

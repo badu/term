@@ -28,7 +28,9 @@ type Finalizer func()
 // for readability
 type channels []chan term.KeyEvent
 
-// delete removes the element at index from channels. This is fast version, but changes order, therefore we cannot rely on index for register / unregister
+// delete removes the element at index from channels.
+// Note that this is the fastest version, which changes order of elements inside the slice
+// Yes, this is repeated code, because avoiding use of interface{}
 func (c *channels) delete(idx int) {
 	(*c)[idx] = (*c)[len(*c)-1] // Copy last element to index i.
 	(*c)[len(*c)-1] = nil       // Erase last element (write zero value).

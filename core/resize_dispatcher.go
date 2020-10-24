@@ -12,7 +12,9 @@ import (
 // for readability
 type channels []chan term.ResizeEvent
 
-// delete removes the element at index from channels. This is fast version, but changes order, therefore we cannot rely on index for register / unregister
+// delete removes the element at index from channels.
+// Note that this is the fastest version, which changes order of elements inside the slice
+// Yes, this is repeated code, because avoiding use of interface{}
 func (c *channels) delete(idx int) {
 	(*c)[idx] = (*c)[len(*c)-1] // Copy last element to index i.
 	(*c)[len(*c)-1] = nil       // Erase last element (write zero value).
@@ -21,13 +23,15 @@ func (c *channels) delete(idx int) {
 
 // EventResize is sent when the window size changes.
 type EventResize struct {
-	size term.Size
+	size *term.Size
 }
 
-func (e EventResize) Size() term.Size {
+// Size
+func (e *EventResize) Size() *term.Size {
 	return e.size
 }
 
+// readerCtx
 type readerCtx struct {
 	ctx      context.Context
 	r        io.Reader
@@ -36,11 +40,13 @@ type readerCtx struct {
 	hasMouse bool
 }
 
+// ioret
 type ioret struct {
 	n   int
 	err error
 }
 
+// Read
 func (r *readerCtx) Read(_ []byte) (int, error) {
 	inBuf := make([]byte, 128)
 
@@ -147,7 +153,7 @@ func (c *core) lifeCycle(ctx context.Context) {
 					}
 				}
 				c.resize(w, h, false)              // store resize info
-				ev := EventResize{size: *c.size}   // create one event for everyone
+				ev := &EventResize{size: c.size}   // create one event for everyone
 				for _, cons := range c.receivers { // multiplexing
 					cons <- ev // Important note : yes, there is the risk of writing to close channels
 				}

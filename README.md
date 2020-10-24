@@ -42,6 +42,15 @@ Possible options are :
 * `WithRunesFallback` - `Application` can set the runes fallback upon constructing.
 * `WithTrueColor` - a functional option so `Application` can send "disable" to disable true color
 
+### Responsibilities 
+
+* offers information about terminal (size, colors, has mouse, charset, keys)
+* registers/unregister listeners for `term.Pixel` changes
+* registers/unregister Mouse and Key handlers
+* registers/unregister Resize event handlers
+* offers ability to show or hide the cursor
+* the `core` exists for the whole `Application` lifecycle
+
 Constructor returns an interface. The `Engine` interface:
 
 * `DyingChan() chan struct{}` - it's a channel that needs to be listened inside `Application`, to allow gracefully shutdowns.
@@ -64,6 +73,7 @@ Constructor returns an interface. The `Engine` interface:
 * `HideCursor()` - hides input cursor.
 * `Cursor() *image.Point` - returns current input cursor position.
 * `Clear()` - clears the screen.
+* `Style() Style` - returns the terminal styles and palette. Style is an interface.
  
 `ResizeEvent` is an interface has only one method `Size() Size` and Size has - of course - Width and Height properties. 
 

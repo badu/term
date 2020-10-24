@@ -16,7 +16,7 @@ type Death interface {
 
 // ResizeEvent is an interface that implemented by core
 type ResizeEvent interface {
-	Size() Size
+	Size() *Size
 }
 
 // ResizeListener is for listeners that must implement this interface
@@ -100,6 +100,12 @@ type KeyDispatcher interface {
 // For normal keys, like  ASCII letters, we use Rune, and then expect the application to inspect the Rune() member of the KeyEvent.
 type Key int16
 
+type Style interface {
+	Colors() map[color.Color]color.Color //
+	Palette() []color.Color              //
+	FindColor(c color.Color) color.Color //
+}
+
 // Engine is the interface of the core
 type Engine interface {
 	Death                                        // returns the chan that creator needs to be listen for graceful shutdown
@@ -114,7 +120,7 @@ type Engine interface {
 	NumColors() int                              // returns the number of colors of the current display
 	Size() *Size                                 // returns the size of the current display
 	HasTrueColor() bool                          // returns true if can display true color
-	Style() *style.TermStyle                     // returns the terminal styles and palette
+	Style() Style                                // returns the terminal styles and palette
 	ActivePixels(pixels []PixelGetter)           // registers the active pixels, forgetting the old ones. This behaviour should be found in Pages
 	Redraw(pixels []PixelGetter)                 // does a buffered redraw of the screen (TODO : should not be used)
 	ShowCursor(where *image.Point)               // shows the cursor at the indicated position

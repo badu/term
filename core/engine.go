@@ -92,7 +92,7 @@ type core struct {
 	fallback         map[rune]string       // runes fallback
 	altChars         map[rune]string       // alternative runes
 	buf              bytes.Buffer          // buffer, works in conjunction with useDrawBuffering (might be removed, due to the nature of pixels)
-	style            *style.TermStyle
+	style            term.Style
 	cursorPosition   *image.Point // the position of the cursor, if visible
 	pixCancel        func()       // allows cancellation of listening to pixels changes
 	hasTrueColor     bool         // as the name says
@@ -122,7 +122,7 @@ func NewCore(termEnv string, options ...Option) (term.Engine, error) {
 		died:         make(chan struct{}),                    // init of died channel, a buffered channel of exactly one
 		receivers:    make(channels, 0),                      // init the receivers slice of channels which will register themselves for resizing events
 		winSizeCh:    make(chan os.Signal, runtime.NumCPU()), // listening resize events (OS specific)
-		style:        style.NewTermStyle(ti),
+		style:        style.NewTermStyle(ti.Colors),
 		charset:      getCharset(),
 		hasTrueColor: hasTrueColor,
 	}
@@ -197,7 +197,7 @@ func (c *core) Start(ctx context.Context) error {
 		c.info.PutEnableAcs(c.out)
 		c.info.PutClear(c.out)
 
-		ev := EventResize{size: *c.size}   // create one event for everyone
+		ev := &EventResize{size: c.size}   // create one event for everyone
 		for _, cons := range c.receivers { // dispatch initial resize event, to inform listeners about width and height
 			cons <- ev
 		}
@@ -299,14 +299,6 @@ func (c *core) NumColors() int {
 		return 1 << 24
 	}
 	return c.info.Colors
-}
-
-// Term returns the underlying term
-func (c *core) Term() *info.Term {
-	c.Lock()
-	defer c.Unlock()
-
-	return c.info
 }
 
 // encodeRune appends a buffer with encoded runes
@@ -461,7 +453,7 @@ func (c *core) Clear() {
 }
 
 // Style
-func (c *core) Style() *style.TermStyle {
+func (c *core) Style() term.Style {
 	return c.style
 }
 
