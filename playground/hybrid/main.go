@@ -72,13 +72,13 @@ func main() {
 		log.Println("[hybrid] core finalizer called")
 	}))
 	if err != nil {
-		log.Printf("error : %v", err)
+		log.Printf("[hybrid] error : %v", err)
 		os.Exit(1)
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
 	if err := engine.Start(ctx); err != nil {
-		log.Printf("error : %v", err)
+		log.Printf("[hybrid] error : %v", err)
 		os.Exit(1)
 	}
 
@@ -99,12 +99,15 @@ func main() {
 			if seconds == 3 {
 				engine.MouseDispatcher().Disable()
 			}
+			if seconds == 0 {
+				return
+			}
 		}
 	}()
 	<-time.After(wait)
 	cancel()
 	log.Println("[hybrid] waiting for engine to finalize correctly")
 	<-engine.DyingChan()
-	log.Println("Finished.")
+	log.Println("[hybrid] done.")
 	os.Exit(0)
 }

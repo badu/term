@@ -30,10 +30,11 @@ func (r *listener) lifeCycle(ctx context.Context) {
 		for {
 			select {
 			case <-ctx.Done():
+				log.Println("[key] context is done")
 				r.died <- struct{}{}
 				return
 			case ev := <-r.incoming:
-				log.Printf("event : %v", ev)
+				log.Printf("[key] key : name=%s key=%c modname=%s", ev.Name(), ev.Rune(), ev.ModName())
 			}
 		}
 	}()
@@ -52,16 +53,16 @@ func main() {
 	initLog.InitLogger()
 
 	engine, err := core.NewCore(os.Getenv("TERM"), core.WithFinalizer(func() {
-		log.Println("Core finalizer called")
+		log.Println("[key] core finalizer called")
 	}))
 	if err != nil {
-		log.Printf("error : %v", err)
+		log.Printf("[key] error : %v", err)
 		os.Exit(1)
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
 	if err := engine.Start(ctx); err != nil {
-		log.Printf("error : %v", err)
+		log.Printf("[key] error : %v", err)
 		os.Exit(1)
 	}
 
@@ -69,18 +70,23 @@ func main() {
 	receiver := NewReceiver(rCtx)
 	engine.KeyDispatcher().Register(receiver)
 
-	seconds := 30
-	wait := 30 * time.Second
+	seconds := 10
+	wait := 11 * time.Second
 	go func() {
 		for seconds > 0 {
 			<-time.After(1 * time.Second)
-			log.Printf("waiting %d seconds", seconds)
+			log.Printf("[key] waiting %d seconds", seconds)
 			seconds--
+			if seconds == 0 {
+				log.Println("[key] 0 seconds existing counting goroutine")
+				return
+			}
 		}
 	}()
 	<-time.After(wait)
 	cancel2()
 	cancel()
-	log.Println("waiting for engine to finalize correctly")
+	log.Println("[key] waiting for engine to finalize correctly")
 	<-engine.DyingChan()
+	log.Println("[key] done.")
 }

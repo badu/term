@@ -442,12 +442,16 @@ func (d *eventDispatcher) lifeCycle(ctx context.Context) {
 	d.Once.Do(
 		func() {
 			// input listener routine
-			go func() {
+			go func(cx context.Context) {
 				buf := &bytes.Buffer{}
 				for {
 					select {
-					case <-ctx.Done():
-						d.endLifeCycle()
+					case <-cx.Done(): // context is done, exiting goroutine
+						d.keyTimer.Stop()
+						if d.finalizer != nil { // order matters, otherwise the finalizer won't get called
+							d.finalizer() // call finalizer function
+						}
+						close(d.died) // notifying our death to a dispatcher (which listens in register)
 						return
 					case <-d.keyTimer.C:
 						// If the timer fired, and the current time is after the expiration of the escape sequence, then we assume the escape sequence reached it's conclusion, and process the chunk independently.
@@ -489,16 +493,7 @@ func (d *eventDispatcher) lifeCycle(ctx context.Context) {
 						}
 					}
 				}
-			}()
+			}(ctx)
 		},
 	)
-}
-
-// endOfLifecycle attempt to complete the lifecycle by shutting down gracefully
-func (d *eventDispatcher) endLifeCycle() {
-	d.keyTimer.Stop()
-	if d.finalizer != nil { // order matters, otherwise the finalizer won't get called
-		d.finalizer() // call finalizer function
-	}
-	d.died <- struct{}{} // notifying our death to a dispatcher (which listens in register)
 }

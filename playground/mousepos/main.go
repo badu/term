@@ -160,7 +160,7 @@ func (r *listener) lifeCycle(ctx context.Context, cancel func()) {
 		r.emitStr(2, 4, white, mouseStr)
 		r.emitStr(2, 5, white, buttonsStr)
 		r.emitStr(2, 6, white, keysStr)
-		log.Printf("initial w = %03d h = %03d", size.Width, size.Height)
+		log.Printf("[app] initial w = %03d h = %03d", size.Width, size.Height)
 		pixelsToCleanup := make([]term.PixelSetter, 0)
 		for {
 			if hasChange {
@@ -181,14 +181,14 @@ func (r *listener) lifeCycle(ctx context.Context, cancel func()) {
 				switch ev.Buttons() {
 				case mouse.ButtonPrimary:
 					if mouseDownCol == -1 && mouseDownRow == -1 {
-						log.Printf("mouse up at %03d, %03d", mouseCol, mouseRow)
+						log.Printf("[app] mouse up at %03d, %03d", mouseCol, mouseRow)
 						mouseDownCol, mouseDownRow = mouseCol, mouseRow
 					} else {
 						pixelsToCleanup = append(pixelsToCleanup, r.drawSelect(mouseDownCol, mouseDownRow, mouseCol, mouseRow, blue)...)
 					}
 				case mouse.ButtonNone:
 					if mouseDownCol > 0 && mouseDownRow > 0 {
-						log.Printf("mouse up at %03d, %03d. draw rect with %03d, %03d", mouseCol, mouseRow, mouseDownCol, mouseDownRow)
+						log.Printf("[app] mouse up at %03d, %03d. draw rect with %03d, %03d", mouseCol, mouseRow, mouseDownCol, mouseDownRow)
 						r.cleanup(pixelsToCleanup)
 						mouseDownCol, mouseDownRow = -1, -1
 						pixelsToCleanup = make([]term.PixelSetter, 0)
@@ -208,7 +208,7 @@ func (r *listener) lifeCycle(ctx context.Context, cancel func()) {
 				default:
 					escapeCount = 0
 					if ev.Rune() == 'C' || ev.Rune() == 'c' {
-						log.Println("clear screen")
+						log.Println("[app] clear screen")
 						r.engine.Clear()
 					}
 				}
@@ -243,13 +243,13 @@ func main() {
 		log.Println("[app] core finalizer called")
 	}))
 	if err != nil {
-		log.Printf("error : %v", err)
+		log.Printf("[app] error : %v", err)
 		os.Exit(1)
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
 	if err := engine.Start(ctx); err != nil {
-		log.Printf("error : %v", err)
+		log.Printf("[app] error : %v", err)
 		os.Exit(1)
 	}
 
@@ -260,6 +260,5 @@ func main() {
 	engine.ResizeDispatcher().Register(receiver)
 
 	<-engine.DyingChan()
-	log.Println("[app] Finished.")
-	os.Exit(0)
+	log.Println("[app] done.")
 }

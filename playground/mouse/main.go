@@ -34,7 +34,7 @@ func (r *listener) lifeCycle(ctx context.Context) {
 				return
 			case ev := <-r.incoming:
 				x, y := ev.Position()
-				log.Printf("[hybrid] mouse : %s x=%d y=%d %s", ev.ButtonNames(), x, y, ev.ModName())
+				log.Printf("[mouse]  mouse : %s x=%d y=%d %s", ev.ButtonNames(), x, y, ev.ModName())
 			}
 		}
 	}()
@@ -53,15 +53,15 @@ func main() {
 	initLog.InitLogger()
 
 	engine, err := core.NewCore(os.Getenv("TERM"), core.WithFinalizer(func() {
-		log.Println("Core finalizer called")
+		log.Println("[mouse] Core finalizer called")
 	}))
 	if err != nil {
-		log.Printf("error : %v", err)
+		log.Printf("[mouse] error : %v", err)
 		os.Exit(1)
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	if err := engine.Start(ctx); err != nil {
-		log.Printf("error : %v", err)
+		log.Printf("[mouse] error : %v", err)
 		os.Exit(1)
 	}
 
@@ -70,17 +70,21 @@ func main() {
 	engine.MouseDispatcher().Register(receiver)
 
 	seconds := 10
-	wait := 10 * time.Second
+	wait := 11 * time.Second
 	go func() {
 		for seconds > 0 {
 			<-time.After(1 * time.Second)
-			log.Printf("waiting %d seconds", seconds)
+			log.Printf("[mouse] waiting %d seconds", seconds)
 			seconds--
+			if seconds == 0 {
+				return
+			}
 		}
 	}()
 	<-time.After(wait)
 	cancel2()
 	cancel()
-	log.Println("waiting for engine to finalize correctly")
+	log.Println("[mouse] waiting for engine to finalize correctly")
 	<-engine.DyingChan()
+	log.Println("[mouse] done.")
 }

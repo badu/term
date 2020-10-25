@@ -49,23 +49,20 @@ type ioret struct {
 // Read
 func (r *readerCtx) Read(_ []byte) (int, error) {
 	inBuf := make([]byte, 128)
-
-	c := make(chan ioret, 1)
+	ret := make(chan ioret, 1)
 
 	go func() {
 		n, err := r.r.Read(inBuf)
-		c <- ioret{n, err}
-		close(c)
+		ret <- ioret{n, err}
+		close(ret)
 	}()
-
+	// blocking wait for one of the channels (either we have reads or context cancellation)
 	select {
-	case ret := <-c:
-		chunkCopy := make([]byte, ret.n)
-		copy(chunkCopy, inBuf[:ret.n])
+	case ret := <-ret:
 		if r.hasMouse {
-			r.mouseCh <- chunkCopy
+			r.mouseCh <- inBuf[:ret.n]
 		}
-		r.keyCh <- chunkCopy
+		r.keyCh <- inBuf[:ret.n]
 		return ret.n, ret.err
 	case <-r.ctx.Done():
 		return 0, r.ctx.Err()
@@ -86,8 +83,8 @@ func newContextReader(ctx context.Context, r io.Reader, keyChan, mouseChan chan 
 // lifeCycle all lifecycle goroutines
 func (c *core) lifeCycle(ctx context.Context) {
 	// goroutine for listening inputs and distribute them to listeners
-	go func() {
-		reader := newContextReader(ctx, c.in, c.keyDispatcher.InChan(), c.mouseDispatcher.InChan(), len(c.info.Mouse) != 0)
+	go func(cx context.Context) {
+		reader := newContextReader(cx, c.in, c.keyDispatcher.InChan(), c.mouseDispatcher.InChan(), len(c.info.Mouse) != 0)
 		for {
 			// by default we just listen whatever comes
 			_, err := reader.Read(nil)
@@ -105,10 +102,10 @@ func (c *core) lifeCycle(ctx context.Context) {
 				return
 			}
 		}
-	}()
+	}(ctx)
 	// goroutine for gracefully shutting down
-	go func(done <-chan struct{}) {
-		<-done // block here until we're done
+	go func(cx context.Context) {
+		<-cx.Done() // block here until we're done
 		if Debug {
 			log.Println("[core] init'ing shutdown sequence.")
 		}
@@ -127,7 +124,7 @@ func (c *core) lifeCycle(ctx context.Context) {
 				log.Printf("[core] internal shutdown error : %v", err)
 			}
 		}
-		fmt.Println(c.info.Clear) // clears the screen after shutdown
+		fmt.Println(c.info.Clear) // clears the terminal screen after shutdown
 		if Debug {
 			log.Println("[core] shutdown complete")
 		}
@@ -135,14 +132,13 @@ func (c *core) lifeCycle(ctx context.Context) {
 		if c.finalizer != nil {
 			c.finalizer()
 		}
-
-		c.died <- struct{}{} // notifying our death to a dispatcher (which listens in register)
-	}(ctx.Done())
+		close(c.died) // notifying our death to a dispatcher (which listens in register)
+	}(ctx)
 	// goroutine for watching size changes
-	go func(done <-chan struct{}) {
+	go func(cx context.Context) {
 		for {
 			select {
-			case <-done:
+			case <-cx.Done():
 				if Debug {
 					log.Println("[core] context done - exiting resize listener")
 				}
@@ -169,7 +165,7 @@ func (c *core) lifeCycle(ctx context.Context) {
 				c.Unlock()
 			}
 		}
-	}(ctx.Done())
+	}(ctx)
 }
 
 // Register is registering receivers

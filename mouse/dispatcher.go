@@ -32,8 +32,7 @@ type Option func(core *eventDispatcher)
 // WithTerminalInfo is mandatory for constructor, used by core
 func WithTerminalInfo(ti *info.Term) Option {
 	return func(d *eventDispatcher) {
-		log.Printf("hasMouse ? %t", len(ti.Mouse) != 0)
-		d.hasMouse = len(ti.Mouse) != 0 //len(e.info.Mouse) != 0
+		d.hasMouse = len(ti.Mouse) != 0
 	}
 }
 
@@ -443,13 +442,16 @@ func (e *eventDispatcher) readXTerm(buf *bytes.Buffer) (bool, error) {
 func (e *eventDispatcher) lifeCycle(ctx context.Context) {
 	e.Once.Do(
 		func() {
-			// input listener
-			go func() {
+			// input listener into a goroutine
+			go func(cx context.Context) {
 				buf := &bytes.Buffer{}
 				for {
 					select {
-					case <-ctx.Done():
-						e.endLifeCycle()
+					case <-cx.Done(): // context was done, returning from this goroutine
+						if e.finalizer != nil {
+							e.finalizer() // order matters, otherwise the finalizer won't get called
+						}
+						close(e.died) // notifying our death to a dispatcher (which listens in register)
 						return
 					case ev := <-e.resizeCh:
 						e.size = ev.Size()
@@ -465,17 +467,7 @@ func (e *eventDispatcher) lifeCycle(ctx context.Context) {
 						}
 					}
 				}
-			}()
+			}(ctx)
 		},
 	)
-}
-
-// endOfLifecycle attempt to complete the lifecycle by shutting down gracefully
-func (e *eventDispatcher) endLifeCycle() {
-	// order matters, otherwise the finalizer won't get called
-	if e.finalizer != nil {
-		e.finalizer()
-	}
-	// notifying our death to a dispatcher (which listens in register)
-	e.died <- struct{}{}
 }

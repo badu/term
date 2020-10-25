@@ -265,6 +265,5 @@ func main() {
 	engine.ResizeDispatcher().Register(page)
 	log.Printf("[app] registered listeners.")
 	<-engine.DyingChan()
-	log.Println("[app] Finished.")
-	os.Exit(0)
+	log.Println("[app] done.")
 }
