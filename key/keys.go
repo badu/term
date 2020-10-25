@@ -5,7 +5,7 @@ import (
 
 	"github.com/badu/term"
 	enc "github.com/badu/term/encoding"
-	"github.com/badu/term/info"
+	termInfo "github.com/badu/term/info"
 )
 
 func prepareKeyMod(c *eventDispatcher, k term.Key, mod term.ModMask, val string) {
@@ -72,83 +72,83 @@ func prepareKeyModXTerm(c *eventDispatcher, k term.Key, val string) {
 	}
 }
 
-func prepareXtermModifiers(c *eventDispatcher) {
-	if c.info.Modifiers != info.XTerm {
+func prepareXtermModifiers(c *eventDispatcher, info *termInfo.Term) {
+	if info.Modifiers != termInfo.XTerm {
 		return
 	}
-	prepareKeyModXTerm(c, Right, c.info.KeyRight)
-	prepareKeyModXTerm(c, Left, c.info.KeyLeft)
-	prepareKeyModXTerm(c, Up, c.info.KeyUp)
-	prepareKeyModXTerm(c, Down, c.info.KeyDown)
-	prepareKeyModXTerm(c, Insert, c.info.KeyInsert)
-	prepareKeyModXTerm(c, Delete, c.info.KeyDelete)
-	prepareKeyModXTerm(c, PgUp, c.info.KeyPgUp)
-	prepareKeyModXTerm(c, PgDn, c.info.KeyPgDn)
-	prepareKeyModXTerm(c, Home, c.info.KeyHome)
-	prepareKeyModXTerm(c, End, c.info.KeyEnd)
-	prepareKeyModXTerm(c, F1, c.info.KeyF1)
-	prepareKeyModXTerm(c, F2, c.info.KeyF2)
-	prepareKeyModXTerm(c, F3, c.info.KeyF3)
-	prepareKeyModXTerm(c, F4, c.info.KeyF4)
-	prepareKeyModXTerm(c, F5, c.info.KeyF5)
-	prepareKeyModXTerm(c, F6, c.info.KeyF6)
-	prepareKeyModXTerm(c, F7, c.info.KeyF7)
-	prepareKeyModXTerm(c, F8, c.info.KeyF8)
-	prepareKeyModXTerm(c, F9, c.info.KeyF9)
-	prepareKeyModXTerm(c, F10, c.info.KeyF10)
-	prepareKeyModXTerm(c, F11, c.info.KeyF11)
-	prepareKeyModXTerm(c, F12, c.info.KeyF12)
+	prepareKeyModXTerm(c, Right, info.KeyRight)
+	prepareKeyModXTerm(c, Left, info.KeyLeft)
+	prepareKeyModXTerm(c, Up, info.KeyUp)
+	prepareKeyModXTerm(c, Down, info.KeyDown)
+	prepareKeyModXTerm(c, Insert, info.KeyInsert)
+	prepareKeyModXTerm(c, Delete, info.KeyDelete)
+	prepareKeyModXTerm(c, PgUp, info.KeyPgUp)
+	prepareKeyModXTerm(c, PgDn, info.KeyPgDn)
+	prepareKeyModXTerm(c, Home, info.KeyHome)
+	prepareKeyModXTerm(c, End, info.KeyEnd)
+	prepareKeyModXTerm(c, F1, info.KeyF1)
+	prepareKeyModXTerm(c, F2, info.KeyF2)
+	prepareKeyModXTerm(c, F3, info.KeyF3)
+	prepareKeyModXTerm(c, F4, info.KeyF4)
+	prepareKeyModXTerm(c, F5, info.KeyF5)
+	prepareKeyModXTerm(c, F6, info.KeyF6)
+	prepareKeyModXTerm(c, F7, info.KeyF7)
+	prepareKeyModXTerm(c, F8, info.KeyF8)
+	prepareKeyModXTerm(c, F9, info.KeyF9)
+	prepareKeyModXTerm(c, F10, info.KeyF10)
+	prepareKeyModXTerm(c, F11, info.KeyF11)
+	prepareKeyModXTerm(c, F12, info.KeyF12)
 }
 
 func prepareKey(c *eventDispatcher, k term.Key, val string) {
 	prepareKeyMod(c, k, ModNone, val)
 }
 
-func prepareKeys(c *eventDispatcher) {
-	prepareKey(c, Backspace, c.info.KeyBackspace)
-	prepareKey(c, F1, c.info.KeyF1)
-	prepareKey(c, F2, c.info.KeyF2)
-	prepareKey(c, F3, c.info.KeyF3)
-	prepareKey(c, F4, c.info.KeyF4)
-	prepareKey(c, F5, c.info.KeyF5)
-	prepareKey(c, F6, c.info.KeyF6)
-	prepareKey(c, F7, c.info.KeyF7)
-	prepareKey(c, F8, c.info.KeyF8)
-	prepareKey(c, F9, c.info.KeyF9)
-	prepareKey(c, F10, c.info.KeyF10)
-	prepareKey(c, F11, c.info.KeyF11)
-	prepareKey(c, F12, c.info.KeyF12)
-	prepareKey(c, Insert, c.info.KeyInsert)
-	prepareKey(c, Delete, c.info.KeyDelete)
-	prepareKey(c, Home, c.info.KeyHome)
-	prepareKey(c, End, c.info.KeyEnd)
-	prepareKey(c, Up, c.info.KeyUp)
-	prepareKey(c, Down, c.info.KeyDown)
-	prepareKey(c, Left, c.info.KeyLeft)
-	prepareKey(c, Right, c.info.KeyRight)
-	prepareKey(c, PgUp, c.info.KeyPgUp)
-	prepareKey(c, PgDn, c.info.KeyPgDn)
-	prepareKey(c, Help, c.info.KeyHelp)
-	prepareKey(c, Print, c.info.KeyPrint)
-	prepareKey(c, Cancel, c.info.KeyCancel)
-	prepareKey(c, Exit, c.info.KeyExit)
-	prepareKey(c, BackTab, c.info.KeyBacktab)
+func prepareKeys(c *eventDispatcher, info *termInfo.Term) {
+	prepareKey(c, Backspace, info.KeyBackspace)
+	prepareKey(c, F1, info.KeyF1)
+	prepareKey(c, F2, info.KeyF2)
+	prepareKey(c, F3, info.KeyF3)
+	prepareKey(c, F4, info.KeyF4)
+	prepareKey(c, F5, info.KeyF5)
+	prepareKey(c, F6, info.KeyF6)
+	prepareKey(c, F7, info.KeyF7)
+	prepareKey(c, F8, info.KeyF8)
+	prepareKey(c, F9, info.KeyF9)
+	prepareKey(c, F10, info.KeyF10)
+	prepareKey(c, F11, info.KeyF11)
+	prepareKey(c, F12, info.KeyF12)
+	prepareKey(c, Insert, info.KeyInsert)
+	prepareKey(c, Delete, info.KeyDelete)
+	prepareKey(c, Home, info.KeyHome)
+	prepareKey(c, End, info.KeyEnd)
+	prepareKey(c, Up, info.KeyUp)
+	prepareKey(c, Down, info.KeyDown)
+	prepareKey(c, Left, info.KeyLeft)
+	prepareKey(c, Right, info.KeyRight)
+	prepareKey(c, PgUp, info.KeyPgUp)
+	prepareKey(c, PgDn, info.KeyPgDn)
+	prepareKey(c, Help, info.KeyHelp)
+	prepareKey(c, Print, info.KeyPrint)
+	prepareKey(c, Cancel, info.KeyCancel)
+	prepareKey(c, Exit, info.KeyExit)
+	prepareKey(c, BackTab, info.KeyBacktab)
 
-	prepareKeyMod(c, Right, ModShift, c.info.KeyShfRight)
-	prepareKeyMod(c, Left, ModShift, c.info.KeyShfLeft)
-	prepareKeyMod(c, Up, ModShift, c.info.KeyShfUp)
-	prepareKeyMod(c, Down, ModShift, c.info.KeyShfDown)
-	prepareKeyMod(c, Home, ModShift, c.info.KeyShfHome)
-	prepareKeyMod(c, End, ModShift, c.info.KeyShfEnd)
-	prepareKeyMod(c, PgUp, ModShift, c.info.KeyShfPgUp)
-	prepareKeyMod(c, PgDn, ModShift, c.info.KeyShfPgDn)
+	prepareKeyMod(c, Right, ModShift, info.KeyShfRight)
+	prepareKeyMod(c, Left, ModShift, info.KeyShfLeft)
+	prepareKeyMod(c, Up, ModShift, info.KeyShfUp)
+	prepareKeyMod(c, Down, ModShift, info.KeyShfDown)
+	prepareKeyMod(c, Home, ModShift, info.KeyShfHome)
+	prepareKeyMod(c, End, ModShift, info.KeyShfEnd)
+	prepareKeyMod(c, PgUp, ModShift, info.KeyShfPgUp)
+	prepareKeyMod(c, PgDn, ModShift, info.KeyShfPgDn)
 
-	prepareKeyMod(c, Right, ModCtrl, c.info.KeyCtrlRight)
-	prepareKeyMod(c, Left, ModCtrl, c.info.KeyCtrlLeft)
-	prepareKeyMod(c, Up, ModCtrl, c.info.KeyCtrlUp)
-	prepareKeyMod(c, Down, ModCtrl, c.info.KeyCtrlDown)
-	prepareKeyMod(c, Home, ModCtrl, c.info.KeyCtrlHome)
-	prepareKeyMod(c, End, ModCtrl, c.info.KeyCtrlEnd)
+	prepareKeyMod(c, Right, ModCtrl, info.KeyCtrlRight)
+	prepareKeyMod(c, Left, ModCtrl, info.KeyCtrlLeft)
+	prepareKeyMod(c, Up, ModCtrl, info.KeyCtrlUp)
+	prepareKeyMod(c, Down, ModCtrl, info.KeyCtrlDown)
+	prepareKeyMod(c, Home, ModCtrl, info.KeyCtrlHome)
+	prepareKeyMod(c, End, ModCtrl, info.KeyCtrlEnd)
 
 	// Sadly, xterm handling of keyCodes is somewhat erratic.
 	// In particular, different codes are sent depending on application mode is in use or not, and the entries for many of these are simply absent from info on many systems.
@@ -157,7 +157,7 @@ func prepareKeys(c *eventDispatcher) {
 	// We also only do this for terminals that have the application mode present.
 
 	// Cursor mode
-	if len(c.info.EnterKeypad) > 0 {
+	if len(info.EnterKeypad) > 0 {
 		prepareKey(c, Up, "\x1b[A")
 		prepareKey(c, Down, "\x1b[B")
 		prepareKey(c, Right, "\x1b[C")
@@ -178,7 +178,7 @@ func prepareKeys(c *eventDispatcher) {
 		prepareKey(c, Home, "\x1bOH")
 	}
 
-	prepareXtermModifiers(c)
+	prepareXtermModifiers(c, info)
 
 startOver:
 	// Add key mappings for control keys.

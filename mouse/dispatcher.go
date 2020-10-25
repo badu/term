@@ -32,7 +32,8 @@ type Option func(core *eventDispatcher)
 // WithTerminalInfo is mandatory for constructor, used by core
 func WithTerminalInfo(ti *info.Term) Option {
 	return func(d *eventDispatcher) {
-		d.info = ti
+		log.Printf("hasMouse ? %t", len(ti.Mouse) != 0)
+		d.hasMouse = len(ti.Mouse) != 0 //len(e.info.Mouse) != 0
 	}
 }
 
@@ -50,20 +51,27 @@ func WithResizeDispatcher(e term.ResizeDispatcher) Option {
 	}
 }
 
+// WithSwitchChannel for transmitting enable / disable mouse requests
+func WithSwitchChannel(ch chan bool) Option {
+	return func(e *eventDispatcher) {
+		e.switchCh = ch
+	}
+}
+
 // eventDispatcher is an implementation of mouse MouseDispatcher.
 type eventDispatcher struct {
 	sync.Mutex                       // guards other properties
 	sync.Once                        // required for registering lifecycle goroutines exactly once
-	info       *info.Term            //
 	size       *term.Size            //
 	wasBtn     bool                  //
 	buttonDn   bool                  //
 	inputCh    chan []byte           // channel for listening core.Engine inputs *os.File
 	resizeCh   chan term.ResizeEvent // channel for listening resize events, so we can clip our coordinates
 	died       chan struct{}         // this is a buffered channel of size one
+	switchCh   chan bool             // provided by core to switch enable / disable
 	receivers  channels              // We need a slice of channels, on which our listeners will receive those events
 	finalizer  Finalizer             // Yes, we have callback and we could reuse it, but we will affect readability doing so
-	out        *os.File              // needed to pass hide/show mouse commands
+	hasMouse   bool                  // set by WithTerminalInfo
 }
 
 // NewEventDispatcher ignites dispatcher and check for terminal info if mouse is supported.
@@ -74,22 +82,17 @@ func NewEventDispatcher(options ...Option) (term.MouseDispatcher, error) {
 		receivers: make(channels, 0),           // channels that will receive any event is produced here
 		inputCh:   make(chan []byte),           // channel for listening input, so we can build events
 		resizeCh:  make(chan term.ResizeEvent), // channel for listening resize events, so we can clip mouse coordinates
+		size:      &term.Size{Width: 0, Height: 0},
 	}
 
 	for _, o := range options {
 		o(res)
 	}
 
-	if res.info == nil {
-		return nil, errors.New("creator needs to provide terminal info (hint : use WithTerminalInfo option)")
+	if res.switchCh == nil {
+		return nil, errors.New("creator needs to provide access to enable / disable mouse")
 	}
-
-	res.size = &term.Size{
-		Width:  res.info.Width,
-		Height: res.info.Height,
-	}
-	log.Printf("construct mouse dispatcher width = %03d, mouse height = %03d", res.size.Width, res.size.Height)
-	if len(res.info.Mouse) == 0 {
+	if !res.hasMouse {
 		return nil, errors.New("terminal info reports NO mouse support (hint : creator should not enable mouse or create dispatcher)")
 	}
 
@@ -98,7 +101,6 @@ func NewEventDispatcher(options ...Option) (term.MouseDispatcher, error) {
 
 // LifeCycle implementation of term.MouseDispatcher interface, called from core
 func (e *eventDispatcher) LifeCycle(ctx context.Context, out *os.File) {
-	e.out = out
 	// mount lifecycle - listens for chunks of []byte coming via inputCh, analyses them and builds mouse events
 	e.lifeCycle(ctx)
 }
@@ -149,16 +151,19 @@ func (e *eventDispatcher) ResizeListen() chan term.ResizeEvent {
 	return e.resizeCh
 }
 
+// Enable
 func (e *eventDispatcher) Enable() {
-	e.info.PutEnableMouse(e.out)
+	e.switchCh <- true
 }
 
+// Disable
 func (e *eventDispatcher) Disable() {
-	e.info.PutDisableMouse(e.out)
+	e.switchCh <- false
 }
 
+// HasMouse
 func (e *eventDispatcher) HasMouse() bool {
-	return len(e.info.Mouse) != 0
+	return e.hasMouse
 }
 
 func clip(x, y, w, h int) (int, int) {

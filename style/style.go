@@ -40,6 +40,9 @@ func (s *TermStyle) Colors() map[color.Color]color.Color {
 	return s.colors
 }
 
+// FindColorFunc
+type FindColorFunc func(c color.Color) color.Color
+
 // FindColor
 func (s *TermStyle) FindColor(c color.Color) color.Color {
 	if v, ok := s.colors[c]; ok {

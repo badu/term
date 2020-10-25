@@ -72,8 +72,8 @@ func (r *readerCtx) Read(_ []byte) (int, error) {
 	}
 }
 
-// NewReader gets a context-aware io.Reader.
-func NewReader(ctx context.Context, r io.Reader, keyChan, mouseChan chan []byte, hasMouse bool) io.Reader {
+// newContextReader gets a context-aware io.Reader.
+func newContextReader(ctx context.Context, r io.Reader, keyChan, mouseChan chan []byte, hasMouse bool) io.Reader {
 	return &readerCtx{
 		ctx:      ctx,
 		r:        r,
@@ -87,7 +87,7 @@ func NewReader(ctx context.Context, r io.Reader, keyChan, mouseChan chan []byte,
 func (c *core) lifeCycle(ctx context.Context) {
 	// goroutine for listening inputs and distribute them to listeners
 	go func() {
-		reader := NewReader(ctx, c.in, c.keyDispatcher.InChan(), c.mouseDispatcher.InChan(), len(c.info.Mouse) != 0)
+		reader := newContextReader(ctx, c.in, c.keyDispatcher.InChan(), c.mouseDispatcher.InChan(), len(c.info.Mouse) != 0)
 		for {
 			// by default we just listen whatever comes
 			_, err := reader.Read(nil)
@@ -142,8 +142,17 @@ func (c *core) lifeCycle(ctx context.Context) {
 	go func(done <-chan struct{}) {
 		for {
 			select {
-			case <-ctx.Done():
+			case <-done:
+				if Debug {
+					log.Println("[core] context done - exiting resize listener")
+				}
 				return
+			case enable := <-c.mouseSwitch:
+				if enable {
+					c.info.PutEnableMouse(c.out)
+				} else {
+					c.info.PutDisableMouse(c.out)
+				}
 			case <-c.winSizeCh:
 				c.Lock()
 				w, h, err := c.readWinSize() // read new width and height information

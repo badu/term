@@ -3,7 +3,6 @@ package key
 import (
 	"bytes"
 	"context"
-	"errors"
 	"log"
 	"sync"
 	"time"
@@ -41,7 +40,6 @@ func (c *channels) delete(idx int) {
 type eventDispatcher struct {
 	sync.Mutex                             // guards other properties
 	sync.Once                              // required for registering lifecycle goroutines exactly once
-	info             *info.Term            // terminal info
 	inputCh          chan []byte           // channel for listening core.Engine inputs *os.File
 	keyExist         map[term.Key]struct{} //
 	keyCodes         map[string]*Code      //
@@ -73,7 +71,7 @@ func WithKeyTimerInterval(duration time.Duration) Option {
 // WithTerminalInfo is mandatory for the composition, provided by core
 func WithTerminalInfo(ti *info.Term) Option {
 	return func(d *eventDispatcher) {
-		d.info = ti
+		prepareKeys(d, ti) // prepare "known" keys
 	}
 }
 
@@ -92,11 +90,6 @@ func NewEventDispatcher(opts ...Option) (term.KeyDispatcher, error) {
 		o(res)
 	}
 
-	if res.info == nil { // check if WithTerminalInfo was provided
-		return nil, errors.New("creator didn't supply the terminal info")
-	}
-
-	prepareKeys(res) // prepare "known" keys
 	return res, nil
 }
 

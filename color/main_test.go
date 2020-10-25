@@ -84,7 +84,7 @@ func TestColorNameLookup(t *testing.T) {
 			}
 		}
 
-		if c.TrueColor().Hex() != v.color.Hex() {
+		if TrueColor(c).Hex() != v.color.Hex() {
 			t.Errorf("trueColor did not match")
 		}
 	}

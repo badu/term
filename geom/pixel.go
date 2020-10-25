@@ -58,14 +58,15 @@ func WithAttrs(m style.Mask) PixelOption {
 }
 
 type px struct {
-	image.Point                       // required, for each pixel. default to {-1,-1} and validated in the constructor, row is X, column is Y
-	drawCh      chan term.PixelGetter // required, triggers core.drawPixel via setters
-	fgCol       color.Color           // optional, defaults to color.Default
-	bgCol       color.Color           // optional, defaults to color.Default
-	attrs       style.Mask            // optional, defaults to style.None
-	content     rune                  // optional, defaults to encoding.Space
-	unicode     *term.Unicode         // optional, no default (don't waste memory)
-	width       int                   // defaults to 1 if encoding.Space
+	image.Point                         // required, for each pixel. default to {-1,-1} and validated in the constructor, row is X, column is Y
+	drawCh        chan term.PixelGetter // required, triggers core.drawPixel via setters
+	fgCol         color.Color           // optional, defaults to color.Default
+	bgCol         color.Color           // optional, defaults to color.Default
+	attrs         style.Mask            // optional, defaults to style.None
+	content       rune                  // optional, defaults to encoding.Space
+	unicode       *term.Unicode         // optional, no default (don't waste memory)
+	width         int                   // defaults to 1 if encoding.Space
+	wasRegistered bool                  // flag, which is set by the draw channel getter, so we don't write to that channel until we've been asked for it
 }
 
 // BgCol
@@ -98,18 +99,21 @@ func (p *px) Attrs() style.Mask {
 	return p.attrs
 }
 
-// Size
+// Width - usually 1
 func (p *px) Width() int {
 	return p.width
 }
 
-// Position
+// Position - returns the position of the pixel
 func (p *px) Position() *image.Point {
 	return &p.Point
 }
 
-// DrawCh
-func (p px) DrawCh() chan term.PixelGetter {
+// DrawCh - usually called from core, to register listening for changes
+func (p *px) DrawCh() chan term.PixelGetter {
+	if !p.wasRegistered {
+		p.wasRegistered = true // we assume that the engine is the one which asked about draw channel, so we're marking ourselves as ready to dispatch changes
+	}
 	return p.drawCh
 }
 
@@ -120,10 +124,12 @@ func (p *px) SetFgBg(fg, bg color.Color) {
 	}
 	p.bgCol = bg
 	p.fgCol = fg
-	p.drawCh <- p
+	if p.wasRegistered {
+		p.drawCh <- p // if not registered, it will cause blocking
+	}
 }
 
-// Set
+// Set - sets rune, background and foreground
 func (p *px) Set(r rune, fg, bg color.Color) {
 	if p.bgCol == bg && p.fgCol == fg && p.content == r {
 		return
@@ -132,10 +138,12 @@ func (p *px) Set(r rune, fg, bg color.Color) {
 	p.bgCol = bg
 	p.fgCol = fg
 	p.width = 1
-	p.drawCh <- p
+	if p.wasRegistered {
+		p.drawCh <- p // if not registered, it will cause blocking
+	}
 }
 
-// SetAll
+// SetAll - set all possible properties and dispatches changes
 func (p *px) SetAll(bg, fg color.Color, m style.Mask, r rune, u term.Unicode) {
 	var currUnicode term.Unicode
 	if p.unicode != nil {
@@ -164,47 +172,57 @@ func (p *px) SetAll(bg, fg color.Color, m style.Mask, r rune, u term.Unicode) {
 	p.content = r
 	p.unicode = &u
 	p.attrs = m
-	p.drawCh <- p
+	if p.wasRegistered {
+		p.drawCh <- p // if not registered, it will cause blocking
+	}
 }
 
-// SetAttrs
+// SetAttrs - sets mask and dispatches changes
 func (p *px) SetAttrs(m style.Mask) {
 	if p.attrs == m {
 		return
 	}
 	p.attrs = m
-	p.drawCh <- p
+	if p.wasRegistered {
+		p.drawCh <- p // if not registered, it will cause blocking
+	}
 }
 
-// SetBackground
+// SetBackground - sets background color and dispatches changes
 func (p *px) SetBackground(c color.Color) {
 	if p.bgCol == c {
 		return
 	}
 	p.bgCol = c
-	p.drawCh <- p
+	if p.wasRegistered {
+		p.drawCh <- p // if not registered, it will cause blocking
+	}
 }
 
-// SetForeground
+// SetForeground - sets foreground color and dispatches changes
 func (p *px) SetForeground(c color.Color) {
 	if p.fgCol == c {
 		return
 	}
 	p.fgCol = c
-	p.drawCh <- p
+	if p.wasRegistered {
+		p.drawCh <- p // if not registered, it will cause blocking
+	}
 }
 
-// SetRune
+// SetRune - sets rune and dispatches changes
 func (p *px) SetRune(r rune) {
 	if p.content == r {
 		return
 	}
 	p.content = r
 	p.width = 1
-	p.drawCh <- p
+	if p.wasRegistered {
+		p.drawCh <- p // if not registered, it will cause blocking
+	}
 }
 
-// SetUnicode
+// SetUnicode - sets unicode and dispatches changes
 func (p *px) SetUnicode(u term.Unicode) {
 	var currUnicode term.Unicode
 	if p.unicode != nil {
@@ -232,18 +250,21 @@ func (p *px) SetUnicode(u term.Unicode) {
 	}
 	p.width = newSize + 1 // +1 because of the rune
 	p.unicode = &u
-	p.drawCh <- p
+	if p.wasRegistered {
+		p.drawCh <- p // if not registered, it will cause blocking
+	}
 }
 
 // NewPixel constructs a term.Pixel implementation, to be used as both term.Pixel and term.PixelSetter interfaces
 // Note : the reason for which we're using image.Point relies on the functionality it provides regarding image package, e.g : image.Point.In(r image.Rectangle)
+// Another note, important : the background and foreground needs to be defaulted to color.Default because engine performs extra steps otherwise. Search core.drawPixel method for `ref "needed" from geom.Pixel`
 func NewPixel(opts ...PixelOption) (term.Pixel, error) {
 	// because composition components will "own" a set of pixels, it's not a good idea to to cache our GoTo []byte here
 	res := &px{
 		Point:   image.Point{X: -1, Y: -1},
 		drawCh:  make(chan term.PixelGetter),
-		bgCol:   color.Reset,    // default has no color
-		fgCol:   color.Reset,    // default has no color
+		bgCol:   color.Default,  // default has color Default
+		fgCol:   color.Default,  // default has color Default
 		attrs:   style.None,     // default has no style
 		content: encoding.Space, // it's just a space char
 	}

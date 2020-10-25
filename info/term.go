@@ -5,7 +5,6 @@ import (
 	"container/list"
 	"errors"
 	"fmt"
-	"image"
 	"io"
 	"log"
 	"os"
@@ -920,12 +919,11 @@ func (t *Term) PutDisableMouse(w io.Writer) {
 // GoTo for addressing the cursor at the given row and column.
 // The origin 0, 0 is in the upper left corner of the screen.
 func (t *Term) GoTo(w io.Writer, column, row int) {
-	pt := image.Pt(row, column)
-	v, ok := t.bGotos.mapb[hash(&pt)]
+	v, ok := t.bGotos.mapb[hash(row, column)]
 	if !ok { // not found : storing
 		gotoStr := t.TParam(t.SetCursor, row, column)
 		v = []byte(gotoStr)
-		t.bGotos.mapb[hash(&pt)] = v
+		t.bGotos.mapb[hash(row, column)] = v
 	}
 	if _, err := w.Write(v); err != nil {
 		if Debug {
@@ -934,17 +932,27 @@ func (t *Term) GoTo(w io.Writer, column, row int) {
 	}
 }
 
-func hash(p *image.Point) int {
-	return ((p.X & 0xFFFF) << 16) | (p.Y & 0xFFFF) // X is row, Y is column
+func hash(row, column int) int {
+	return ((row & 0xFFFF) << 16) | (column & 0xFFFF) // X is row, Y is column
 }
 
-func (t *Term) WriteTrueColors(w io.Writer, fg, bg color.Color) {
-	fgAndBgNames := fg.String() + "_" + bg.String()
+func (t *Term) WriteBothColors(w io.Writer, fg, bg color.Color, isDelighted bool) {
+	fgAndBgNames := ""
+	if isDelighted {
+		fgAndBgNames = fmt.Sprintf("0xFF_%06X_%06X", fg.Hex(), bg.Hex())
+	} else {
+		fgAndBgNames = fmt.Sprintf("%06X_%06X", fg.Hex(), bg.Hex())
+	}
 	bgFg, has := t.bColors.mapb[fgAndBgNames]
 	if !has {
-		r1, g1, b1 := fg.RGB()
-		r2, g2, b2 := bg.RGB()
-		bgFgStr := t.TParam(t.SetFgBgRGB, int(r1), int(g1), int(b1), int(r2), int(g2), int(b2))
+		bgFgStr := ""
+		if isDelighted {
+			bgFgStr = t.TParam(t.SetFgBg, int(fg&0xff), int(bg&0xff))
+		} else {
+			r1, g1, b1 := fg.RGB()
+			r2, g2, b2 := bg.RGB()
+			bgFgStr = t.TParam(t.SetFgBgRGB, r1, g1, b1, r2, g2, b2)
+		}
 		bgFg = []byte(bgFgStr)
 		t.bColors.mapb[fgAndBgNames] = bgFg
 	}
@@ -955,16 +963,29 @@ func (t *Term) WriteTrueColors(w io.Writer, fg, bg color.Color) {
 	}
 }
 
-func (t *Term) WriteColor(w io.Writer, c color.Color, isForeground bool) {
-	colorName := c.String()
+func (t *Term) WriteColor(w io.Writer, c color.Color, isForeground, isDelighted bool) {
+	colorName := ""
+	if isDelighted {
+		colorName = fmt.Sprintf("0xFF_%06X", c.Hex())
+	} else {
+		colorName = fmt.Sprintf("%06X", c.Hex())
+	}
 	cb, has := t.bColors.mapb[colorName]
 	if !has {
-		r, g, b := c.RGB()
 		cs := ""
-		if isForeground {
-			cs = t.TParam(t.SetFgRGB, int(r), int(g), int(b))
+		if isDelighted {
+			if isForeground {
+				cs = t.TParam(t.SetFg, int(c&0xFF))
+			} else {
+				cs = t.TParam(t.SetBg, int(c&0xFF))
+			}
 		} else {
-			cs = t.TParam(t.SetBgRGB, int(r), int(g), int(b))
+			r, g, b := c.RGB()
+			if isForeground {
+				cs = t.TParam(t.SetFgRGB, int(r), int(g), int(b))
+			} else {
+				cs = t.TParam(t.SetBgRGB, int(r), int(g), int(b))
+			}
 		}
 		cb = []byte(cs)
 		t.bColors.mapb[colorName] = cb

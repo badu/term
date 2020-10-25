@@ -152,14 +152,14 @@ func TestHslConversion(t *testing.T) {
 	}
 }
 
-/// String ///
+/// Name ///
 ///////////
 
 func TestHexCreation(t *testing.T) {
 	for i, tt := range vals {
 		c, err := NewRGBFromHex(tt.hex)
 		if err != nil || !AlmostEqualRGB(c, tt.c) {
-			t.Errorf("%v. String(%v) => (%v), want %v (delta %v)", i, tt.hex, c, tt.c, delta)
+			t.Errorf("%v. Name(%v) => (%v), want %v (delta %v)", i, tt.hex, c, tt.c, delta)
 		}
 	}
 }
@@ -177,7 +177,7 @@ func TestShortHexCreation(t *testing.T) {
 	for i, tt := range shorthexvals {
 		c, err := NewRGBFromHex(tt.hex)
 		if err != nil || !AlmostEqualRGB(c, tt.c) {
-			t.Errorf("%v. String(%v) => (%v), want %v (delta %v)", i, tt.hex, c, tt.c, delta)
+			t.Errorf("%v. Name(%v) => (%v), want %v (delta %v)", i, tt.hex, c, tt.c, delta)
 		}
 	}
 }
@@ -186,7 +186,7 @@ func TestShortHEXCreation(t *testing.T) {
 	for i, tt := range shorthexvals {
 		c, err := NewRGBFromHex(strings.ToUpper(tt.hex))
 		if err != nil || !AlmostEqualRGB(c, tt.c) {
-			t.Errorf("%v. String(%v) => (%v), want %v (delta %v)", i, strings.ToUpper(tt.hex), c, tt.c, delta)
+			t.Errorf("%v. Name(%v) => (%v), want %v (delta %v)", i, strings.ToUpper(tt.hex), c, tt.c, delta)
 		}
 	}
 }
@@ -195,7 +195,7 @@ func TestHexConversion(t *testing.T) {
 	for i, tt := range vals {
 		hex := tt.c.String()
 		if hex != tt.hex {
-			t.Errorf("%v. %v.String() => (%v), want %v (delta %v)", i, tt.c, hex, tt.hex, delta)
+			t.Errorf("%v. %v.Name() => (%v), want %v (delta %v)", i, tt.c, hex, tt.hex, delta)
 		}
 	}
 }
@@ -504,7 +504,7 @@ func TestMakeColor(t *testing.T) {
 		t.Errorf("NRGBA->Colorful->RGB255 error: %v became (%v, %v, %v, %t)", cOrigNrgba, r, g, b, ok)
 	}
 
-	cOrigNrgba64 := color.NRGBA64{R: 123 << 8, G: 45 << 8, B: 67 << 8, A: 0xffff}
+	cOrigNrgba64 := color.NRGBA64{R: 123 << 8, G: 45 << 8, B: 67 << 8, A: 0xFFFF}
 	cOurs, ok = NewRGB(cOrigNrgba64)
 	r, g, b = RGB255(cOurs)
 	if r != 123 || g != 45 || b != 67 || !ok {

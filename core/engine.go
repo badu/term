@@ -72,6 +72,13 @@ func WithTrueColor(trueColor string) Option {
 	}
 }
 
+// WithIsIntensiveDraw uses second draw method instead of the normal one (which hides cursor)
+func WithIsIntensiveDraw(isIt bool) Option {
+	return func(l *core) {
+		l.isIntensiveDraw = isIt
+	}
+}
+
 // core represents a screen backed by a info implementation.
 type core struct {
 	sync.Mutex                             // guards other properties
@@ -83,6 +90,7 @@ type core struct {
 	out              *os.File              // output, acquired in internalStart, released in internalShutdown, used for displaying
 	died             chan struct{}         // this is a buffered channel of size one
 	winSizeCh        chan os.Signal        // listens for resize signals and transforms them into resize events in the dispatcher section
+	mouseSwitch      chan bool             // listens for mouse enable/disable requests
 	receivers        channels              // We need a slice of channels, on which our listeners will receive those events
 	finalizer        Finalizer             // Yes, we have callback and we could reuse it, but we will affect readability doing so
 	mouseDispatcher  term.MouseDispatcher  // mouse event dispatcher, exposes via term.Engine interface
@@ -97,6 +105,11 @@ type core struct {
 	pixCancel        func()       // allows cancellation of listening to pixels changes
 	hasTrueColor     bool         // as the name says
 	useDrawBuffering bool         // true if we are collecting writes to buf instead of sending directly to out
+	canSetRGB        bool         // true if len(info.Term.SetFgRGB) > 0
+	canSetBgFg       bool         // true if len(info.Term.SetFgBg) > 0
+	canSetFg         bool         // true if len(info.Term.SetFg) > 0
+	canSetBg         bool         // true if len(info.Term.SetBg) > 0
+	isIntensiveDraw  bool
 }
 
 // NewCore returns a Engine that uses the stock TTY interface and POSIX termios, combined with a info description taken from the $TERM environment variable.
@@ -120,11 +133,16 @@ func NewCore(termEnv string, options ...Option) (term.Engine, error) {
 	res := &core{
 		info:         ti,                                     // terminal info
 		died:         make(chan struct{}),                    // init of died channel, a buffered channel of exactly one
+		mouseSwitch:  make(chan bool, 1),                     // listens incoming requests from mouse
 		receivers:    make(channels, 0),                      // init the receivers slice of channels which will register themselves for resizing events
 		winSizeCh:    make(chan os.Signal, runtime.NumCPU()), // listening resize events (OS specific)
 		style:        style.NewTermStyle(ti.Colors),
 		charset:      getCharset(),
 		hasTrueColor: hasTrueColor,
+		canSetRGB:    len(ti.SetFgRGB) > 0,
+		canSetBgFg:   len(ti.SetFgBg) > 0,
+		canSetBg:     len(ti.SetBg) > 0,
+		canSetFg:     len(ti.SetFg) > 0,
 	}
 
 	if e := enc.GetEncoding(res.charset); e != nil {
@@ -146,7 +164,7 @@ func NewCore(termEnv string, options ...Option) (term.Engine, error) {
 		}
 	}
 	// creating dispatchers for key and mouse
-	res.mouseDispatcher, err = mouse.NewEventDispatcher(mouse.WithTerminalInfo(ti), mouse.WithResizeDispatcher(res), mouse.WithFinalizer(finalizer))
+	res.mouseDispatcher, err = mouse.NewEventDispatcher(mouse.WithTerminalInfo(ti), mouse.WithResizeDispatcher(res), mouse.WithFinalizer(finalizer), mouse.WithSwitchChannel(res.mouseSwitch))
 	if err != nil {
 		if Debug {
 			log.Printf("error creating mouse dispatcher : %v", err)
@@ -301,6 +319,8 @@ func (c *core) NumColors() int {
 	return c.info.Colors
 }
 
+type encodeRuneFunc func(r rune, buf []byte) []byte
+
 // encodeRune appends a buffer with encoded runes
 func (c *core) encodeRune(r rune, buf []byte) []byte {
 	nb := make([]byte, 6)
@@ -361,25 +381,29 @@ func (c *core) ActivePixels(pixels []term.PixelGetter) {
 
 	for _, pixel := range pixels {
 		// mount a goroutine for each pixel. The exit mechanism is a convention: a pixel that has -1,-1 coordinates
-		go func(pix term.PixelGetter) {
+		go func(pix term.PixelGetter, intensiveDraw bool) {
 			for msg := range pix.DrawCh() { // listen incoming messages over the pixel draw request channel
 				if msg.Position().X == -1 && msg.Position().Y == -1 { // check if this is the cancellation pixel, we're exiting the goroutine
 					return
 				}
 				go func(p term.PixelGetter) { // running in a separate goroutine, because it blocks reading new messages
 					c.Lock()
-					c.drawPixel(p)
+					if c.isIntensiveDraw {
+						c.drawPixel(p.Position().Y, p.Position().X, p.BgCol(), p.FgCol(), p.Attrs(), p.Rune(), p.HasUnicode(), p.Unicode())
+					} else {
+						c.drawPixels(p)
+					}
 					c.Unlock()
 				}(msg)
 			}
-		}(pixel)
+		}(pixel, c.isIntensiveDraw)
 		// for each pixel, mounting a kill switch, which will write the shutdown message when the context is done
 		go func(pixCh chan term.PixelGetter, done <-chan struct{}, shutdownPix term.PixelGetter) {
 			<-done               // blocking wait for done
 			pixCh <- shutdownPix // write shutdownPixel pixel, so go routine above exits
 		}(pixel.DrawCh(), ctx.Done(), shutdownPixel) // observe that all parameters are passed to the goroutine
 	}
-	c.Unlock() // redraw locks it again
+	c.Unlock() // Redraw locks it again
 	c.Redraw(pixels)
 	if Debug {
 		log.Printf("[core] %d pixels were drawn [%03d x %03d]", len(pixels), c.size.Width, c.size.Height)
@@ -393,7 +417,7 @@ func (c *core) Redraw(cells []term.PixelGetter) {
 	defer c.Unlock()
 
 	c.useDrawBuffering = true // we use buffering, since we're redrawing everything
-	c.drawPixel(cells...)
+	c.drawPixels(cells...)
 	c.useDrawBuffering = false // finished buffering
 
 	if _, err := c.buf.WriteTo(c.out); err != nil { // writing buffer content to out
@@ -468,109 +492,102 @@ func (c *core) resize(w, h int, shutdown bool) {
 	c.size = &term.Size{Width: w, Height: h}
 }
 
-// drawPixel - locked inside caller function
-func (c *core) drawPixel(pixels ...term.PixelGetter) {
+// drawPixels - locked inside caller function
+func (c *core) drawPixels(pixels ...term.PixelGetter) {
 	var w io.Writer
 	if c.useDrawBuffering {
 		w = &c.buf
 	} else {
 		w = c.out
 	}
+	cachedBG := color.Default
+	cachedFG := color.Default
+	cachedAttrs := style.None
+
 	for _, pixel := range pixels {
-		c.info.GoTo(w, pixel.Position().Y, pixel.Position().X) // Y is column, X is row
+		c.info.GoTo(w, pixel.Position().Y, pixel.Position().X)       // first we go to that pixel : Y is column, X is row
+		fg, bg, attrs := pixel.FgCol(), pixel.BgCol(), pixel.Attrs() // read pixel colors and attributes
+		if fg == cachedFG && bg == cachedBG && cachedAttrs == attrs {
+			goto cachedStyle // if the previous pixel had the same attributes and colors, we jump to displaying runes
+		}
 
-		c.info.PutAttrOff(w)
+		if c.info.Colors > 0 {
+			c.info.PutAttrOff(w) // about to send colors
 
-		if c.info.Colors != 0 {
-			// putting background and foreground colors
-			fg := pixel.FgCol()
-			bg := pixel.BgCol()
 			if fg == color.Reset || bg == color.Reset {
 				c.info.PutResetFgBg(w)
-				goto colorDone // TODO : check correct?
 			}
 
-			if c.hasTrueColor {
-				if len(c.info.SetFgRGB) > 0 { // we can use SetFgRGB
-					if fg.IsRGB() && bg.IsRGB() { // both are RGB
-						c.info.WriteTrueColors(w, fg, bg)
-						goto colorDone
-					}
-					// not both are RGB
-					if fg.IsRGB() {
-						c.info.WriteColor(w, fg, true)
-						fg = color.Default
-					}
+			if c.hasTrueColor && c.canSetRGB { // we can use SetFgRGB
+				if fg.IsRGB() && bg.IsRGB() { // both are RGB
+					c.info.WriteBothColors(w, fg, bg, false)
+					goto colorDone
+				}
 
-					if bg.IsRGB() {
-						c.info.WriteColor(w, bg, false)
-						bg = color.Default
-					}
+				// not both are RGB
+				if fg.IsRGB() {
+					c.info.WriteColor(w, fg, true, false)
+					fg = color.Default //  resets cache
+				}
+
+				if bg.IsRGB() {
+					c.info.WriteColor(w, bg, false, false)
+					bg = color.Default // resets cache
 				}
 			}
 
 			if fg.Valid() {
-				fg = c.style.FindColor(fg)
+				fg = c.style.FindColor(fg) // attempt to find the color from info.Term colors
 			}
 
 			if bg.Valid() {
-				bg = c.style.FindColor(bg)
+				bg = c.style.FindColor(bg) // same as above
 			}
 
-			if fg.Valid() && bg.Valid() && len(c.info.SetFgBg) > 0 {
-				def := c.info.TParam(c.info.SetFgBg, int(fg&0xff), int(bg&0xff))
-				if err := c.info.WriteString(w, def); err != nil {
-					if Debug {
-						log.Printf("[core-sendFgBg] error writing string : %v", err)
-					}
-				}
+			if fg.Valid() && bg.Valid() && c.canSetBgFg {
+				c.info.WriteBothColors(w, fg, bg, true)
 				goto colorDone
 			}
 
-			if fg.Valid() && len(c.info.SetFg) > 0 {
-				def := c.info.TParam(c.info.SetFg, int(fg&0xff))
-				if err := c.info.WriteString(w, def); err != nil {
-					if Debug {
-						log.Printf("[core-sendFgBg] error writing string : %v", err)
-					}
-				}
+			if fg.Valid() && c.canSetFg {
+				c.info.WriteColor(w, fg, true, true)
 			}
 
-			if bg.Valid() && len(c.info.SetBg) > 0 {
-				def := c.info.TParam(c.info.SetBg, int(bg&0xff))
-				if err := c.info.WriteString(w, def); err != nil {
-					if Debug {
-						log.Printf("[core-sendFgBg] error writing string : %v", err)
-					}
-				}
+			if bg.Valid() && c.canSetBg {
+				c.info.WriteColor(w, bg, false, true)
 			}
 		}
+
 	colorDone:
 
-		if pixel.Attrs() != style.None { // it's not just *normal* text
-			attrs := pixel.Attrs()
-			if attrs&style.Bold != 0 {
-				c.info.PutBold(w)
-			}
-			if attrs&style.Underline != 0 {
-				c.info.PutUnderline(w)
-			}
-			if attrs&style.Reverse != 0 {
-				c.info.PutReverse(w)
-			}
-			if attrs&style.Blink != 0 {
-				c.info.PutBlink(w)
-			}
-			if attrs&style.Dim != 0 {
-				c.info.PutDim(w)
-			}
-			if attrs&style.Italic != 0 {
-				c.info.PutItalic(w)
-			}
-			if attrs&style.StrikeThrough != 0 {
-				c.info.PutStrikeThrough(w)
-			}
+		if attrs&style.Bold != 0 {
+			c.info.PutBold(w)
 		}
+		if attrs&style.Underline != 0 {
+			c.info.PutUnderline(w)
+		}
+		if attrs&style.Reverse != 0 {
+			c.info.PutReverse(w)
+		}
+		if attrs&style.Blink != 0 {
+			c.info.PutBlink(w)
+		}
+		if attrs&style.Dim != 0 {
+			c.info.PutDim(w)
+		}
+		if attrs&style.Italic != 0 {
+			c.info.PutItalic(w)
+		}
+		if attrs&style.StrikeThrough != 0 {
+			c.info.PutStrikeThrough(w)
+		}
+
+		// cache for speeding up display same pixels (like a bunch of black background with white text)
+		cachedAttrs = attrs
+		cachedBG = bg
+		cachedFG = fg
+
+	cachedStyle:
 
 		buf := make([]byte, 0, 6)
 		buf = c.encodeRune(pixel.Rune(), buf)
@@ -581,7 +598,7 @@ func (c *core) drawPixel(pixels ...term.PixelGetter) {
 			}
 		}
 
-		// TODO : implement width checking
+		// TODO : implement width checking for too wide to fit or chars not being able to display
 		// str := string(buf)
 		// if pixel.Width() > 1 && str == "?" {
 		// No FullWidth character support
@@ -620,4 +637,111 @@ func (c *core) drawPixel(pixels ...term.PixelGetter) {
 	// ok, we had a cursor before : restore cursor position
 	c.info.GoTo(c.out, c.cursorPosition.Y, c.cursorPosition.X) // Y is column, X is row
 	c.info.PutShowCursor(c.out)
+}
+
+// drawPixel - locked inside caller function
+// same as drawPixels, but since it's called in goroutine, needed to be faster
+// TODO : find even a faster way (e.g. prepare the out then write it all at once, pprof this for allocations)
+func (c *core) drawPixel(column, row int, fg, bg color.Color, attrs style.Mask, ru rune, hasUnicode bool, unicode *term.Unicode) {
+
+	c.info.GoTo(c.out, column, row) // first we go to that pixel : Y is column, X is row
+
+	if c.info.Colors > 0 {
+		c.info.PutAttrOff(c.out) // about to send colors
+
+		if fg == color.Reset || bg == color.Reset {
+			c.info.PutResetFgBg(c.out)
+		}
+
+		if c.hasTrueColor && c.canSetRGB { // we can use SetFgRGB
+			if fg.IsRGB() && bg.IsRGB() { // both are RGB
+				c.info.WriteBothColors(c.out, fg, bg, false)
+				goto colorDone
+			}
+
+			// not both are RGB
+			if fg.IsRGB() {
+				c.info.WriteColor(c.out, fg, true, false)
+				fg = color.Default //  resets cache
+			}
+
+			if bg.IsRGB() {
+				c.info.WriteColor(c.out, bg, false, false)
+				bg = color.Default // resets cache
+			}
+		}
+
+		if fg.Valid() {
+			fg = c.style.FindColor(fg) // attempt to find the color from info.Term colors
+		}
+
+		if bg.Valid() {
+			bg = c.style.FindColor(bg) // same as above
+		}
+
+		if fg.Valid() && bg.Valid() && c.canSetBgFg {
+			c.info.WriteBothColors(c.out, fg, bg, true)
+			goto colorDone
+		}
+
+		if fg.Valid() && c.canSetFg {
+			c.info.WriteColor(c.out, fg, true, true)
+		}
+
+		if bg.Valid() && c.canSetBg {
+			c.info.WriteColor(c.out, bg, false, true)
+		}
+	}
+
+colorDone:
+
+	if attrs&style.Bold != 0 {
+		c.info.PutBold(c.out)
+	}
+	if attrs&style.Underline != 0 {
+		c.info.PutUnderline(c.out)
+	}
+	if attrs&style.Reverse != 0 {
+		c.info.PutReverse(c.out)
+	}
+	if attrs&style.Blink != 0 {
+		c.info.PutBlink(c.out)
+	}
+	if attrs&style.Dim != 0 {
+		c.info.PutDim(c.out)
+	}
+	if attrs&style.Italic != 0 {
+		c.info.PutItalic(c.out)
+	}
+	if attrs&style.StrikeThrough != 0 {
+		c.info.PutStrikeThrough(c.out)
+	}
+
+	buf := make([]byte, 0, 6)
+	buf = c.encodeRune(ru, buf)
+	if hasUnicode {
+		uni := unicode
+		for _, r := range *uni {
+			buf = c.encodeRune(r, buf)
+		}
+	}
+
+	// TODO : implement width checking for too wide to fit or chars not being able to display
+	// str := string(buf)
+	// if pixel.Width() > 1 && str == "?" {
+	// No FullWidth character support
+	// str = "? "
+	// }
+	// if pixel.Position().X > c.size.Width-pixel.Width() {
+	// if Debug {
+	//	log.Printf("too wide to fit : %d [%d]", pixel.Width(), c.size.Width)
+	// }
+	// str = " " // too wide to fit; emit a single space instead
+	// }
+
+	if _, err := c.out.Write(buf); err != nil {
+		if Debug {
+			log.Printf("error writing to io : " + err.Error())
+		}
+	}
 }

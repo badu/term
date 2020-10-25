@@ -16,19 +16,10 @@ import (
 type Color uint64
 
 const (
-	// Default is used to leave the Color unchanged from whatever system or terminal default may exist. It's also the zero value.
-	Default Color = 0
-
-	// ColorIsValid is used to indicate the color value is actually/ valid (initialized).
-	// This is useful to permit the zero value to be treated as the default.
-	Valid Color = 1 << 32
-
-	// IsRGB is used to indicate that the numeric value is not a known color constant, but rather an RGB value.
-	// The lower order 3 bytes are RGB.
-	IsRGB Color = 1 << 33
-
-	// Special is a flag used to indicate that the values have special meaning, and live outside of the color space(s).
-	Special Color = 1 << 34
+	Default Color = 0       // Default is used to leave the Color unchanged from whatever system or terminal default may exist. It's also the zero value.
+	Valid   Color = 1 << 32 // ColorIsValid is used to indicate the color value is actually/ valid (initialized). This is useful to permit the zero value to be treated as the default.
+	IsRGB   Color = 1 << 33 // IsRGB is used to indicate that the numeric value is not a known color constant, but rather an RGB value. The lower order 3 bytes are RGB.
+	Special Color = 1 << 34 // Special is a flag used to indicate that the values have special meaning, and live outside of the color space(s).
 )
 
 // Note that the order of these options is important -- it follows the
@@ -422,6 +413,59 @@ const (
 	Reset = Special | iota
 )
 
+// NewHexColor returns a color using the given 24-bit RGB value.
+func NewHexColor(v int32) Color {
+	return IsRGB | Color(v) | Valid
+}
+
+// NewRGBColor returns a new color with the given red, green, and blue values.
+// Each value must be represented in the range 0-255.
+func NewRGBColor(r, g, b int32) Color {
+	return NewHexColor(((r & 0xFF) << 16) | ((g & 0xFF) << 8) | (b & 0xFF))
+}
+
+// NewRGBAColor makes a color from imageColor ("image/color")
+func NewRGBAColor(r, g, b, a uint32) Color {
+	ai := int32(a >> 8)
+	ri := (int32(r>>8) & ai) << 16
+	gi := (int32(g>>8) & ai) << 8
+	bi := int32(b>>8) & ai
+	return NewHexColor(ri | gi | bi)
+}
+
+// Light returns the amount of light in a color.
+func Light(c Color) float64 {
+	v := c.Hex()
+	if v < 0 {
+		return 0.0
+	}
+	_, _, l := ToHCL(RGB{R: float64((v>>16)&0xFF) / 255, G: float64((v>>8)&0xFF) / 255, B: float64(v&0xFF) / 255})
+	return l
+}
+
+// TrueColor returns the true color (RGB) version of the provided color.
+// This is useful for ensuring color accuracy when using named colors.
+// This will override terminal theme colors.
+func TrueColor(c Color) Color {
+	if c&Valid == 0 {
+		return Default
+	}
+	if c&IsRGB != 0 {
+		return c
+	}
+	return Color(c.Hex()) | IsRGB | Valid
+}
+
+// RGB returns the red, green, and blue components of the color, with each component represented as a value 0-255.
+// In the event that the color cannot be broken up (not set usually), -1 is returned for each value.
+func (c Color) RGB() (int, int, int) {
+	v := c.Hex()
+	if v < 0 {
+		return -1, -1, -1
+	}
+	return (int(v) >> 16) & 0xFF, (int(v) >> 8) & 0xFF, int(v) & 0xFF
+}
+
 // Valid indicates the color is a valid value (has been set).
 func (c Color) Valid() bool {
 	return c&Valid != 0
@@ -435,11 +479,11 @@ func (c Color) IsRGB() bool {
 // NewRGBFromHex returns the color's hexadecimal RGB 24-bit value with each component consisting of a single byte, ala R << 16 | G << 8 | B.
 // If the color is unknown or unset, -1 is returned.
 func (c Color) Hex() int32 {
-	if !c.Valid() {
+	if c&Valid == 0 {
 		return -1
 	}
 	if c&IsRGB != 0 {
-		return int32(c) & 0xffffff
+		return int32(c) & 0xFFFFFF
 	}
 
 	switch c {
@@ -1206,7 +1250,8 @@ func (c Color) Hex() int32 {
 	return -1
 }
 
-func (c Color) String() string {
+// Name - should have been Stringer implementation, but it's not needed for now
+func Name(c Color) string {
 	switch c {
 	case Black:
 		return "black"
@@ -1489,49 +1534,6 @@ func (c Color) String() string {
 	default:
 		return "noname"
 	}
-}
-
-// RGB returns the red, green, and blue components of the color, with each component represented as a value 0-255.
-// In the event that the color cannot be broken up (not set usually), -1 is returned for each value.
-func (c Color) RGB() (int32, int32, int32) {
-	v := c.Hex()
-	if v < 0 {
-		return -1, -1, -1
-	}
-	return (v >> 16) & 0xff, (v >> 8) & 0xff, v & 0xff
-}
-
-func (c Color) Light() float64 {
-	v := c.Hex()
-	if v < 0 {
-		return 0.0
-	}
-	_, _, l := ToHCL(RGB{R: float64((v>>16)&0xff) / 255, G: float64((v>>8)&0xff) / 255, B: float64(v&0xff) / 255})
-	return l
-}
-
-// TrueColor returns the true color (RGB) version of the provided color.
-// This is useful for ensuring color accuracy when using named colors.
-// This will override terminal theme colors.
-func (c Color) TrueColor() Color {
-	if !c.Valid() {
-		return Default
-	}
-	if c&IsRGB != 0 {
-		return c
-	}
-	return Color(c.Hex()) | IsRGB | Valid
-}
-
-// NewRGBColor returns a new color with the given red, green, and blue values.
-// Each value must be represented in the range 0-255.
-func NewRGBColor(r, g, b int32) Color {
-	return NewHexColor(((r & 0xff) << 16) | ((g & 0xff) << 8) | (b & 0xff))
-}
-
-// NewHexColor returns a color using the given 24-bit RGB value.
-func NewHexColor(v int32) Color {
-	return IsRGB | Color(v) | Valid
 }
 
 // NewColor creates a Color from a color name (W3C name).

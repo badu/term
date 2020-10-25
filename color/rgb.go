@@ -25,11 +25,11 @@ func NewRGB(col color.Color) (RGB, bool) {
 
 	// Since color.RGB is alpha pre-multiplied, we need to divide the
 	// RGB values by alpha again in order to get back the original RGB.
-	r *= 0xffff
+	r *= 0xFFFF
 	r /= alpha
-	g *= 0xffff
+	g *= 0xFFFF
 	g /= alpha
-	b *= 0xffff
+	b *= 0xFFFF
 	b /= alpha
 
 	return RGB{float64(r) / 65535.0, float64(g) / 65535.0, float64(b) / 65535.0}, true
@@ -902,7 +902,7 @@ func (r *RGB) Value() (driver.Value, error) {
 	return (*r).String(), nil
 }
 
-// String returns the hex "html" representation of the color, as in #ff0080.
+// Name returns the hex "html" representation of the color, as in #ff0080.
 func (r RGB) String() string {
 	// Add 0.5 for rounding
 	return fmt.Sprintf("#%02x%02x%02x", uint8(r.R*255.0+0.5), uint8(r.G*255.0+0.5), uint8(r.B*255.0+0.5))
@@ -910,4 +910,8 @@ func (r RGB) String() string {
 
 func (e errUnsupportedType) Error() string {
 	return fmt.Sprintf("unsupported type: got %v, want a %s", e.got, e.want)
+}
+
+func ExpandToInt32(r *RGB) (int32, int32, int32) {
+	return int32(r.R*255.0 + 0.5), int32(r.G*255.0 + 0.5), int32(r.B*255.0 + 0.5)
 }
