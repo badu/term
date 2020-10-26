@@ -2,7 +2,6 @@ package geom
 
 import (
 	"errors"
-	"image"
 	"log"
 	"unicode/utf8"
 
@@ -29,10 +28,11 @@ func WithForeground(c color.Color) PixelOption {
 	}
 }
 
-// WithPoint is required - row is X, column is Y
-func WithPoint(point image.Point) PixelOption {
+// WithPosition is required - row is X, column is Y
+func WithPosition(pos term.Position) PixelOption {
 	return func(p *px) {
-		p.Point = point
+		pos.UpdateHash()
+		p.pos = pos
 	}
 }
 
@@ -58,7 +58,7 @@ func WithAttrs(m style.Mask) PixelOption {
 }
 
 type px struct {
-	image.Point                         // required, for each pixel. default to {-1,-1} and validated in the constructor, row is X, column is Y
+	pos           term.Position         // required, for each pixel. default to {-1,-1} and validated in the constructor, row is X, column is Y
 	drawCh        chan term.PixelGetter // required, triggers core.drawPixel via setters
 	fgCol         color.Color           // optional, defaults to color.Default
 	bgCol         color.Color           // optional, defaults to color.Default
@@ -105,8 +105,8 @@ func (p *px) Width() int {
 }
 
 // Position - returns the position of the pixel
-func (p *px) Position() *image.Point {
-	return &p.Point
+func (p *px) PositionHash() int {
+	return p.pos.Hash()
 }
 
 // DrawCh - usually called from core, to register listening for changes
@@ -260,8 +260,9 @@ func (p *px) SetUnicode(u term.Unicode) {
 // Another note, important : the background and foreground needs to be defaulted to color.Default because engine performs extra steps otherwise. Search core.drawPixel method for `ref "needed" from geom.Pixel`
 func NewPixel(opts ...PixelOption) (term.Pixel, error) {
 	// because composition components will "own" a set of pixels, it's not a good idea to to cache our GoTo []byte here
+	defPos := term.Position{Row: -1, Column: -1}
 	res := &px{
-		Point:   image.Point{X: -1, Y: -1},
+		pos:     defPos,
 		drawCh:  make(chan term.PixelGetter),
 		bgCol:   color.Default,  // default has color Default
 		fgCol:   color.Default,  // default has color Default
@@ -274,8 +275,8 @@ func NewPixel(opts ...PixelOption) (term.Pixel, error) {
 	}
 	// validate point is NOT -1,-1
 	// yes, it's an or condition, so we always do positive
-	if res.Point.X == -1 || res.Point.Y == -1 {
-		return nil, errors.New("coordinates -1 for X or Y have a special meaning")
+	if res.pos.Row == -1 && res.pos.Column == -1 {
+		return nil, errors.New("coordinates -1 for Row AND Column have a special meaning")
 	}
 	return res, nil
 }

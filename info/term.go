@@ -13,6 +13,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/badu/term"
 	"github.com/badu/term/color"
 )
 
@@ -934,32 +935,45 @@ func (t *Commander) PutDisableMouse(w io.Writer) {
 	}
 }
 
-// GoTo for addressing the cursor at the given row and column.
-// The origin 0, 0 is in the upper left corner of the screen.
-func (t *Commander) GoTo(w io.Writer, column, row int) {
-	v, ok := t.bGotos.mapb[hash(row, column)]
-	if !ok { // not found : storing
-		gotoStr := t.TParam(t.SetCursor, row, column)
-		v = []byte(gotoStr)
-		t.bGotos.mapb[hash(row, column)] = v
-	}
-	if _, err := w.Write(v); err != nil {
-		if Debug {
-			log.Printf("error writing to out : %v", err)
+// MakeGoToCache - caches goto commands
+func (t *Commander) MakeGoToCache(size *term.Size, hashFn func(column, row int) int) {
+	t.bGotos = &gotoCache{mapb: make(map[int][]byte)}
+	for col := 0; col < size.Width; col++ {
+		for row := 0; row < size.Height; row++ {
+			gotoStr := t.TParam(t.SetCursor, row, col)
+			hash := hashFn(col, row)
+			if _, ok := t.bGotos.mapb[hash]; ok {
+				if Debug {
+					log.Printf("hash colision detected %d %d => %d", col, row, hash)
+				}
+			}
+			t.bGotos.mapb[hash] = []byte(gotoStr)
 		}
 	}
 }
 
-func hash(row, column int) int {
-	return ((row & 0xFFFF) << 16) | (column & 0xFFFF) // X is row, Y is column
+// GoTo for addressing the cursor at the given row and column - but using the hash of that position
+func (t *Commander) GoTo(w io.Writer, hash int) {
+	v, ok := t.bGotos.mapb[hash]
+	if ok {
+		if _, err := w.Write(v); err != nil {
+			if Debug {
+				log.Printf("error writing to out : %v", err)
+			}
+		}
+		return
+	}
+	if Debug {
+		log.Printf("error finding cached value for hash : %d", hash)
+	}
 }
 
 func (t *Commander) WriteBothColors(w io.Writer, fg, bg color.Color, isDelighted bool) {
 	fgAndBgNames := ""
 	if isDelighted {
-		fgAndBgNames = fmt.Sprintf("0xFF_%06X_%06X", fg.Hex(), bg.Hex())
+		fgAndBgNames = fmt.Sprintf("0xFF_%06X_%06X", color.Hex(fg), color.Hex(bg))
 	} else {
-		fgAndBgNames = fmt.Sprintf("%06X_%06X", fg.Hex(), bg.Hex())
+		fgAndBgNames = fmt.Sprintf("%06X_%06X", color.Hex(fg), color.Hex(bg))
 	}
 	bgFg, has := t.bColors.mapb[fgAndBgNames]
 	if !has {
@@ -967,8 +981,8 @@ func (t *Commander) WriteBothColors(w io.Writer, fg, bg color.Color, isDelighted
 		if isDelighted {
 			bgFgStr = t.TParam(t.SetFgBg, int(fg&0xff), int(bg&0xff))
 		} else {
-			r1, g1, b1 := fg.RGB()
-			r2, g2, b2 := bg.RGB()
+			r1, g1, b1 := color.ToRGB(fg)
+			r2, g2, b2 := color.ToRGB(bg)
 			bgFgStr = t.TParam(t.SetFgBgRGB, r1, g1, b1, r2, g2, b2)
 		}
 		bgFg = []byte(bgFgStr)
@@ -984,9 +998,9 @@ func (t *Commander) WriteBothColors(w io.Writer, fg, bg color.Color, isDelighted
 func (t *Commander) WriteColor(w io.Writer, c color.Color, isForeground, isDelighted bool) {
 	colorName := ""
 	if isDelighted {
-		colorName = fmt.Sprintf("0xFF_%06X", c.Hex())
+		colorName = fmt.Sprintf("0xFF_%06X", color.Hex(c))
 	} else {
-		colorName = fmt.Sprintf("%06X", c.Hex())
+		colorName = fmt.Sprintf("%06X", color.Hex(c))
 	}
 	cb, has := t.bColors.mapb[colorName]
 	if !has {
@@ -998,7 +1012,7 @@ func (t *Commander) WriteColor(w io.Writer, c color.Color, isForeground, isDelig
 				cs = t.TParam(t.SetBg, int(c&0xFF))
 			}
 		} else {
-			r, g, b := c.RGB()
+			r, g, b := color.ToRGB(c)
 			if isForeground {
 				cs = t.TParam(t.SetFgRGB, r, g, b)
 			} else {

@@ -12,14 +12,14 @@ import (
 // LinearGradient defines a Gradient travelling straight at a given angle.
 // The only supported values for the angle are `0.0` (vertical) and `90.0` (horizontal), currently.
 type LinearGradient struct {
-	sync.RWMutex             //
-	position     image.Point // The current position of the Rectangle
-	size         term.Size   // The current size of the Rectangle
-	min          term.Size   // The minimum size this object can be
-	StartColor   color.Color // The beginning color of the gradient
-	EndColor     color.Color // The end color of the gradient
-	Angle        float64     // The angle of the gradient (0/180 for vertical; 90/270 for horizontal)
-	Hidden       bool        // Is this object currently hidden
+	sync.RWMutex               //
+	position     term.Position // The current position of the Rectangle
+	size         term.Size     // The current size of the Rectangle
+	min          term.Size     // The minimum size this object can be
+	StartColor   color.Color   // The beginning color of the gradient
+	EndColor     color.Color   // The end color of the gradient
+	Angle        float64       // The angle of the gradient (0/180 for vertical; 90/270 for horizontal)
+	Hidden       bool          // Is this object currently hidden
 }
 
 // Generate calculates an image of the gradient with the specified width and height.
@@ -80,7 +80,7 @@ func (l *LinearGradient) Resize(size term.Size) {
 }
 
 // CurrentPosition gets the current position of this rectangle object, relative to its parent / canvas
-func (l *LinearGradient) Position() image.Point {
+func (l *LinearGradient) Position() term.Position {
 	l.RLock()
 	defer l.RUnlock()
 
@@ -88,7 +88,7 @@ func (l *LinearGradient) Position() image.Point {
 }
 
 // Move the rectangle object to a new position, relative to its parent / canvas
-func (l *LinearGradient) Move(pos image.Point) {
+func (l *LinearGradient) Move(pos term.Position) {
 	l.Lock()
 	defer l.Unlock()
 
@@ -141,15 +141,15 @@ func (l *LinearGradient) Hide() {
 
 // RadialGradient defines a Gradient travelling radially from a center point outward.
 type RadialGradient struct {
-	sync.RWMutex              //
-	position      image.Point // The current position of the Rectangle
-	size          term.Size   // The current size of the Rectangle
-	min           term.Size   // The minimum size this object can be
-	StartColor    color.Color // The beginning color of the gradient
-	EndColor      color.Color // The end color of the gradient
-	CenterOffsetX float64     // The offset of the center for generation of the gradient. This is not a DP measure but relates to the width/height. A value of 0.5 would move the center by the half width/height.
-	CenterOffsetY float64     //
-	Hidden        bool        // Is this object currently hidden
+	sync.RWMutex                //
+	position      term.Position // The current position of the Rectangle
+	size          term.Size     // The current size of the Rectangle
+	min           term.Size     // The minimum size this object can be
+	StartColor    color.Color   // The beginning color of the gradient
+	EndColor      color.Color   // The end color of the gradient
+	CenterOffsetX float64       // The offset of the center for generation of the gradient. This is not a DP measure but relates to the width/height. A value of 0.5 would move the center by the half width/height.
+	CenterOffsetY float64       //
+	Hidden        bool          // Is this object currently hidden
 }
 
 // Generate calculates an image of the gradient with the specified width and height.
@@ -271,7 +271,7 @@ func (r *RadialGradient) Resize(size term.Size) {
 }
 
 // CurrentPosition gets the current position of this rectangle object, relative to its parent / canvas
-func (r *RadialGradient) Position() image.Point {
+func (r *RadialGradient) Position() term.Position {
 	r.RLock()
 	defer r.RUnlock()
 
@@ -279,7 +279,7 @@ func (r *RadialGradient) Position() image.Point {
 }
 
 // Move the rectangle object to a new position, relative to its parent / canvas
-func (r *RadialGradient) Move(pos image.Point) {
+func (r *RadialGradient) Move(pos term.Position) {
 	r.Lock()
 	defer r.Unlock()
 

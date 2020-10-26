@@ -69,7 +69,7 @@ func (p *page) init() {
 		for row := 0; row < p.size.Height; row++ {
 			fg := geom.WithForeground(p.image[imageColumn][imageRow][0])
 			bg := geom.WithBackground(p.image[imageColumn][imageRow][1])
-			px, _ := geom.NewPixel(geom.WithRune('▀'), fg, bg, geom.WithPoint(image.Point{X: row, Y: column})) // row is X, column is Y
+			px, _ := geom.NewPixel(geom.WithRune('▀'), fg, bg, geom.WithPosition(term.NewPosition(column, row))) // row is X, column is Y
 			getters = append(getters, px)
 			p.pixels[column][row] = px
 			imageRow++
@@ -193,14 +193,14 @@ func makeColors(r io.Reader) ([][][2]color.Color, int, int, error) {
 			result[col][rrow] = [2]color.Color{}
 			c1 := color.NewRGBAColor(img.At(col, row).RGBA())
 			result[col][rrow][0] = c1
-			if !c1.IsRGB() {
-				return nil, 0, 0, fmt.Errorf("error : color 0x%06X is not RGB", c1.Hex())
+			if !color.IsRGB(c1) {
+				return nil, 0, 0, fmt.Errorf("error : color 0x%06X is not RGB", color.Hex(c1))
 			}
 			if row+1 < height {
 				c2 := color.NewRGBAColor(img.At(col, row+1).RGBA())
 				result[col][rrow][1] = c2
-				if !c2.IsRGB() {
-					return nil, 0, 0, fmt.Errorf("error : color 0x%06X is not RGB", c1.Hex())
+				if !color.IsRGB(c2) {
+					return nil, 0, 0, fmt.Errorf("error : color 0x%06X is not RGB", color.Hex(c2))
 				}
 			}
 			rrow++

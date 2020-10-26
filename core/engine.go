@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"errors"
-	"image"
 	"io"
 	"log"
 	"os"
@@ -19,11 +18,10 @@ import (
 	"github.com/badu/term/color"
 	enc "github.com/badu/term/encoding"
 	"github.com/badu/term/info"
+	_ "github.com/badu/term/info/base" // import the stock terminals
 	"github.com/badu/term/key"
 	"github.com/badu/term/mouse"
 	"github.com/badu/term/style"
-
-	_ "github.com/badu/term/info/base" // import the stock terminals
 )
 
 var (
@@ -102,14 +100,15 @@ type core struct {
 	cachedEncodedRunes map[rune][]byte       // cached encoded runes
 	buf                bytes.Buffer          // buffer, works in conjunction with useDrawBuffering (might be removed, due to the nature of pixels)
 	style              term.Style
-	cursorPosition     *image.Point // the position of the cursor, if visible
-	pixCancel          func()       // allows cancellation of listening to pixels changes
-	hasTrueColor       bool         // as the name says
-	useDrawBuffering   bool         // true if we are collecting writes to buf instead of sending directly to out
-	canSetRGB          bool         // true if len(comm.Term.SetFgRGB) > 0
-	canSetBgFg         bool         // true if len(comm.Term.SetFgBg) > 0
-	canSetFg           bool         // true if len(comm.Term.SetFg) > 0
-	canSetBg           bool         // true if len(comm.Term.SetBg) > 0
+	cursorPosition     *term.Position // the position of the cursor, if visible
+	maximumPosition    *term.Position // the position of the cursor, outside the screen
+	pixCancel          func()         // allows cancellation of listening to pixels changes
+	hasTrueColor       bool           // as the name says
+	useDrawBuffering   bool           // true if we are collecting writes to buf instead of sending directly to out
+	canSetRGB          bool           // true if len(comm.Term.SetFgRGB) > 0
+	canSetBgFg         bool           // true if len(comm.Term.SetFgBg) > 0
+	canSetFg           bool           // true if len(comm.Term.SetFg) > 0
+	canSetBg           bool           // true if len(comm.Term.SetBg) > 0
 	isIntensiveDraw    bool
 }
 
@@ -212,7 +211,7 @@ func (c *core) Start(ctx context.Context) error {
 
 		c.comm.PutEnterCA(c.out)
 		c.comm.PutHideCursor(c.out)
-		c.comm.GoTo(c.out, c.size.Width, c.size.Height) // put cursor outside screen
+		c.comm.GoTo(c.out, c.maximumPosition.Hash()) // put cursor outside screen
 		c.comm.PutEnableAcs(c.out)
 		c.comm.PutClear(c.out)
 
@@ -390,7 +389,7 @@ func (c *core) ActivePixels(pixels []term.PixelGetter) {
 		// mount a goroutine for each pixel. The exit mechanism is a convention: a pixel that has -1,-1 coordinates
 		go func(pix term.PixelGetter, intensiveDraw bool) {
 			for msg := range pix.DrawCh() { // listen incoming messages over the pixel draw request channel
-				if msg.Position().X == -1 && msg.Position().Y == -1 { // check if this is the cancellation pixel, we're exiting the goroutine
+				if msg.PositionHash() == term.MinusOneMinusOne { // check if this is the cancellation pixel, we're exiting the goroutine
 					return
 				}
 				go func(p term.PixelGetter) { // running in a separate goroutine, because it blocks reading new messages
@@ -398,7 +397,7 @@ func (c *core) ActivePixels(pixels []term.PixelGetter) {
 					if c.isIntensiveDraw {
 						buf := make([]byte, 0, 6)
 						buf = c.encodeRune(p.Rune(), buf)
-						c.drawPixel(p.Position().Y, p.Position().X, p.BgCol(), p.FgCol(), p.Attrs(), buf)
+						c.drawPixel(p.PositionHash(), p.BgCol(), p.FgCol(), p.Attrs(), buf)
 					} else {
 						c.drawPixels(p)
 					}
@@ -438,7 +437,7 @@ func (c *core) Redraw(cells []term.PixelGetter) {
 }
 
 // Cursor returns the current cursor position
-func (c *core) Cursor() *image.Point {
+func (c *core) Cursor() *term.Position {
 	c.Lock()
 	defer c.Unlock()
 
@@ -446,21 +445,21 @@ func (c *core) Cursor() *image.Point {
 }
 
 // ShowCursor displays the cursor at the indicated coordinates
-func (c *core) ShowCursor(where *image.Point) {
+func (c *core) ShowCursor(where *term.Position) {
 	c.Lock()
 	defer c.Unlock()
 
-	if where.X < 0 || where.Y < 0 || where.X >= c.size.Width || where.Y >= c.size.Height {
+	if where.Hash() > term.MinusOneMinusOne || where.Hash() > c.maximumPosition.Hash() {
 		// does not update cursor position
 		if c.comm.HasHideCursor {
 			c.comm.PutHideCursor(c.out)
 		}
 		// No way to hide cursor, stick it at bottom right of screen
-		c.comm.GoTo(c.out, c.size.Width, c.size.Height) // Y is column, X is row
+		c.comm.GoTo(c.out, c.maximumPosition.Hash())
 		return
 	}
 	c.cursorPosition = where
-	c.comm.GoTo(c.out, c.cursorPosition.Y, c.cursorPosition.X) // Y is column, X is row
+	c.comm.GoTo(c.out, c.cursorPosition.Hash())
 	c.comm.PutShowCursor(c.out)
 }
 
@@ -475,7 +474,7 @@ func (c *core) HideCursor() {
 		c.comm.PutHideCursor(c.out)
 	}
 	// No way to hide cursor, stick it at bottom right of screen
-	c.comm.GoTo(c.out, c.size.Width, c.size.Height) // Y is column, X is row
+	c.comm.GoTo(c.out, c.maximumPosition.Hash())
 }
 
 // Clear
@@ -499,6 +498,9 @@ func (c *core) resize(w, h int, shutdown bool) {
 		return
 	}
 	c.size = &term.Size{Width: w, Height: h}
+	mp := term.NewPosition(w, h)
+	c.maximumPosition = &mp
+	c.comm.MakeGoToCache(c.size, term.Hash)
 }
 
 // drawPixels - locked inside caller function
@@ -514,7 +516,7 @@ func (c *core) drawPixels(pixels ...term.PixelGetter) {
 	cachedAttrs := style.None
 
 	for _, pixel := range pixels {
-		c.comm.GoTo(w, pixel.Position().Y, pixel.Position().X)       // first we go to that pixel : Y is column, X is row
+		c.comm.GoTo(w, pixel.PositionHash())                         // first we go to
 		fg, bg, attrs := pixel.FgCol(), pixel.BgCol(), pixel.Attrs() // read pixel colors and attributes
 		if fg == cachedFG && bg == cachedBG && cachedAttrs == attrs {
 			goto cachedStyle // if the previous pixel had the same attributes and colors, we jump to displaying runes
@@ -528,41 +530,41 @@ func (c *core) drawPixels(pixels ...term.PixelGetter) {
 			}
 
 			if c.hasTrueColor && c.canSetRGB { // we can use SetFgRGB
-				if fg.IsRGB() && bg.IsRGB() { // both are RGB
+				if color.IsRGB(fg) && color.IsRGB(bg) { // both are RGB
 					c.comm.WriteBothColors(w, fg, bg, false)
 					goto colorDone
 				}
 
 				// not both are RGB
-				if fg.IsRGB() {
+				if color.IsRGB(fg) {
 					c.comm.WriteColor(w, fg, true, false)
 					fg = color.Default //  resets cache
 				}
 
-				if bg.IsRGB() {
+				if color.IsRGB(bg) {
 					c.comm.WriteColor(w, bg, false, false)
 					bg = color.Default // resets cache
 				}
 			}
 
-			if fg.Valid() {
+			if color.Valid(fg) {
 				fg = c.style.FindColor(fg) // attempt to find the color from comm.Term colors
 			}
 
-			if bg.Valid() {
+			if color.Valid(bg) {
 				bg = c.style.FindColor(bg) // same as above
 			}
 
-			if fg.Valid() && bg.Valid() && c.canSetBgFg {
+			if color.Valid(fg) && color.Valid(bg) && c.canSetBgFg {
 				c.comm.WriteBothColors(w, fg, bg, true)
 				goto colorDone
 			}
 
-			if fg.Valid() && c.canSetFg {
+			if color.Valid(fg) && c.canSetFg {
 				c.comm.WriteColor(w, fg, true, true)
 			}
 
-			if bg.Valid() && c.canSetBg {
+			if color.Valid(bg) && c.canSetBg {
 				c.comm.WriteColor(w, bg, false, true)
 			}
 		}
@@ -640,20 +642,20 @@ func (c *core) drawPixels(pixels ...term.PixelGetter) {
 			c.comm.PutHideCursor(c.out)
 		}
 		// There is no way to hide cursor, put it at bottom right of screen
-		c.comm.GoTo(c.out, c.size.Width, c.size.Height) // Y is column, X is row
+		c.comm.GoTo(c.out, c.maximumPosition.Hash())
 		return
 	}
 	// ok, we had a cursor before : restore cursor position
-	c.comm.GoTo(c.out, c.cursorPosition.Y, c.cursorPosition.X) // Y is column, X is row
+	c.comm.GoTo(c.out, c.cursorPosition.Hash())
 	c.comm.PutShowCursor(c.out)
 }
 
 // drawPixel - locked inside caller function
 // same as drawPixels, but since it's called in goroutine, needed to be faster
 // TODO : find even a faster way (e.g. prepare the out then write it all at once, pprof this for allocations)
-func (c *core) drawPixel(column, row int, fg, bg color.Color, attrs style.Mask, encodedRune []byte) {
+func (c *core) drawPixel(posHash int, fg, bg color.Color, attrs style.Mask, encodedRune []byte) {
 
-	c.comm.GoTo(c.out, column, row) // first we go to that pixel : Y is column, X is row
+	c.comm.GoTo(c.out, posHash) // first we go to
 
 	if c.comm.Colors > 0 {
 		c.comm.PutAttrOff(c.out) // about to send colors
@@ -663,41 +665,41 @@ func (c *core) drawPixel(column, row int, fg, bg color.Color, attrs style.Mask, 
 		}
 
 		if c.hasTrueColor && c.canSetRGB { // we can use SetFgRGB
-			if fg.IsRGB() && bg.IsRGB() { // both are RGB
+			if color.IsRGB(fg) && color.IsRGB(bg) { // both are RGB
 				c.comm.WriteBothColors(c.out, fg, bg, false)
 				goto colorDone
 			}
 
 			// not both are RGB
-			if fg.IsRGB() {
+			if color.IsRGB(fg) {
 				c.comm.WriteColor(c.out, fg, true, false)
 				fg = color.Default //  resets cache
 			}
 
-			if bg.IsRGB() {
+			if color.IsRGB(bg) {
 				c.comm.WriteColor(c.out, bg, false, false)
 				bg = color.Default // resets cache
 			}
 		}
 
-		if fg.Valid() {
+		if color.Valid(fg) {
 			fg = c.style.FindColor(fg) // attempt to find the color from comm.Term colors
 		}
 
-		if bg.Valid() {
+		if color.Valid(bg) {
 			bg = c.style.FindColor(bg) // same as above
 		}
 
-		if fg.Valid() && bg.Valid() && c.canSetBgFg {
+		if color.Valid(fg) && color.Valid(bg) && c.canSetBgFg {
 			c.comm.WriteBothColors(c.out, fg, bg, true)
 			goto colorDone
 		}
 
-		if fg.Valid() && c.canSetFg {
+		if color.Valid(fg) && c.canSetFg {
 			c.comm.WriteColor(c.out, fg, true, true)
 		}
 
-		if bg.Valid() && c.canSetBg {
+		if color.Valid(bg) && c.canSetBg {
 			c.comm.WriteColor(c.out, bg, false, true)
 		}
 	}

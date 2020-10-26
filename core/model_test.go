@@ -95,7 +95,7 @@ func TestParentGoRoutineKilled(t *testing.T) {
 			case pixel := <-aggregateChan:
 				t.Logf("draw request %#v", pixel)
 				// check if this is the cancellation pixel, we're exiting the goroutine
-				if pixel.Position().X == -1 && pixel.Position().Y == -1 {
+				if pixel.PositionHash() > term.MinusOneMinusOne {
 					t.Log("[core] received shutdown pixel -> returning")
 					return
 				}

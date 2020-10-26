@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"fmt"
-	"image"
 	"log"
 	"os"
 
@@ -79,9 +78,9 @@ func (r *listener) init(size *term.Size) {
 		for row := 0; row < size.Height; row++ {
 			var px term.Pixel
 			if column%2 == 0 {
-				px, _ = geom.NewPixel(geom.WithPoint(image.Point{X: row, Y: column})) // row is X, column is Y
+				px, _ = geom.NewPixel(geom.WithPosition(term.NewPosition(column, row)))
 			} else {
-				px, _ = geom.NewPixel(geom.WithPoint(image.Point{X: row, Y: column})) // row is X, column is Y
+				px, _ = geom.NewPixel(geom.WithPosition(term.NewPosition(column, row)))
 			}
 			r.refs[column][row] = px
 			getters = append(getters, px)
@@ -245,8 +244,6 @@ func main() {
 		core.WithFinalizer(func() {
 			log.Println("[app] core finalizer called")
 		}),
-		//
-		//core.WithIsIntensiveDraw(true),
 	)
 	if err != nil {
 		log.Printf("[app] error : %v", err)

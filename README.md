@@ -69,9 +69,9 @@ Constructor returns an interface. The `Engine` interface:
 * `Colors() map[color.Color]color.Color` - returns the terminal color map.
 * `ActivePixels(pixels []PixelGetter)` - used by `Application` to orchestrate pixels. Pages will be able to have their own set of pixels.
 * `Redraw(pixels []PixelGetter)` - temporary exposed for `Application` to force draw.
-* `ShowCursor(where *image.Point)` - displays input cursor at coordinates.
+* `ShowCursor(where *term.Position)` - displays input cursor at coordinates.
 * `HideCursor()` - hides input cursor.
-* `Cursor() *image.Point` - returns current input cursor position.
+* `Cursor() *term.Position` - returns current input cursor position.
 * `Clear()` - clears the screen.
 * `Style() Style` - returns the terminal styles and palette. Style is an interface.
  
@@ -94,7 +94,7 @@ A `Pixel` constructor accepts the following functional options:
 The `Pixel` interface (includes `PixelGetter` and `PixelSetter` interfaces):
 
 * `DrawCh() chan Pixel` - the channel used by `core` to listen redraw request.
-* `Position() *image.Point` - the position of the `Pixel`.
+* `PositionHash() int` - the position hash of the `Pixel`.
 * `BgCol() color.Color` - background color of the `Pixel`.
 * `FgCol() color.Color` - foreground color of the `Pixel`.
 * `Attrs() style.Mask` - `Pixel` `style.Mask`.

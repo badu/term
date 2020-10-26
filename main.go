@@ -2,7 +2,6 @@ package term
 
 import (
 	"context"
-	"image"
 
 	"github.com/badu/term/color"
 	"github.com/badu/term/style"
@@ -127,9 +126,9 @@ type Engine interface {
 	Style() Style                                // returns the terminal styles and palette
 	ActivePixels(pixels []PixelGetter)           // registers the active pixels, forgetting the old ones. This behaviour should be found in Pages
 	Redraw(pixels []PixelGetter)                 // does a buffered redraw of the screen (TODO : should not be used)
-	ShowCursor(where *image.Point)               // shows the cursor at the indicated position
+	ShowCursor(where *Position)                  // shows the cursor at the indicated position
 	HideCursor()                                 // hides the cursor
-	Cursor() *image.Point                        // returns the cursor current position
+	Cursor() *Position                           // returns the cursor current position
 	Clear()                                      // cleans the screen
 }
 
@@ -138,7 +137,7 @@ type Unicode []rune
 // PixelGetter is the complete interface (both setter and getter)
 type PixelGetter interface {
 	DrawCh() chan PixelGetter // channel which tells core that pixel needs drawing
-	Position() *image.Point   // position (x,y) where is pixel is placed
+	PositionHash() int        // position (x,y) where is pixel is placed
 	BgCol() color.Color       // background color, if any
 	FgCol() color.Color       // foreground color, if any
 	Attrs() style.Mask        // the attributes, if any (bold, italic, etc)

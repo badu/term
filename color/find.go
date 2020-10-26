@@ -10,14 +10,14 @@ import (
 func FindColor(c Color, palette []Color) Color {
 	match := Default
 	dist := float64(0)
-	r, g, b := c.RGB()
+	r, g, b := ToRGB(c)
 	c1 := RGB{
 		R: float64(r) / 255.0,
 		G: float64(g) / 255.0,
 		B: float64(b) / 255.0,
 	}
 	for _, d := range palette {
-		r, g, b = d.RGB()
+		r, g, b = ToRGB(d)
 		c2 := RGB{
 			R: float64(r) / 255.0,
 			G: float64(g) / 255.0,

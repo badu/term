@@ -17,16 +17,20 @@ type Color uint64
 
 const (
 	Default Color = 0       // Default is used to leave the Color unchanged from whatever system or terminal default may exist. It's also the zero value.
-	Valid   Color = 1 << 32 // ColorIsValid is used to indicate the color value is actually/ valid (initialized). This is useful to permit the zero value to be treated as the default.
-	IsRGB   Color = 1 << 33 // IsRGB is used to indicate that the numeric value is not a known color constant, but rather an RGB value. The lower order 3 bytes are RGB.
+	valid   Color = 1 << 32 // ColorIsValid is used to indicate the color value is actually/ valid (initialized). This is useful to permit the zero value to be treated as the default.
+	isRGB   Color = 1 << 33 // IsRGB is used to indicate that the numeric value is not a known color constant, but rather an RGB value. The lower order 3 bytes are RGB.
 	Special Color = 1 << 34 // Special is a flag used to indicate that the values have special meaning, and live outside of the color space(s).
+)
+
+const (
+	ValidConst = valid
 )
 
 // Note that the order of these options is important -- it follows the
 // definitions used by ECMA and XTerm.  Hence any further named colors
 // must begin at a value not less than 256.
 const (
-	Black = Valid + iota
+	Black = valid + iota
 	Maroon
 	Green
 	Olive
@@ -415,7 +419,7 @@ const (
 
 // NewHexColor returns a color using the given 24-bit RGB value.
 func NewHexColor(v int32) Color {
-	return IsRGB | Color(v) | Valid
+	return isRGB | Color(v) | valid
 }
 
 // NewRGBColor returns a new color with the given red, green, and blue values.
@@ -435,7 +439,7 @@ func NewRGBAColor(r, g, b, a uint32) Color {
 
 // Light returns the amount of light in a color.
 func Light(c Color) float64 {
-	v := c.Hex()
+	v := Hex(c)
 	if v < 0 {
 		return 0.0
 	}
@@ -447,19 +451,19 @@ func Light(c Color) float64 {
 // This is useful for ensuring color accuracy when using named colors.
 // This will override terminal theme colors.
 func TrueColor(c Color) Color {
-	if c&Valid == 0 {
+	if c&valid == 0 {
 		return Default
 	}
-	if c&IsRGB != 0 {
+	if c&isRGB != 0 {
 		return c
 	}
-	return Color(c.Hex()) | IsRGB | Valid
+	return Color(Hex(c)) | isRGB | valid
 }
 
-// RGB returns the red, green, and blue components of the color, with each component represented as a value 0-255.
+// ToRGB returns the red, green, and blue components of the color, with each component represented as a value 0-255.
 // In the event that the color cannot be broken up (not set usually), -1 is returned for each value.
-func (c Color) RGB() (int, int, int) {
-	v := c.Hex()
+func ToRGB(c Color) (int, int, int) {
+	v := Hex(c)
 	if v < 0 {
 		return -1, -1, -1
 	}
@@ -467,22 +471,22 @@ func (c Color) RGB() (int, int, int) {
 }
 
 // Valid indicates the color is a valid value (has been set).
-func (c Color) Valid() bool {
-	return c&Valid != 0
+func Valid(c Color) bool {
+	return c&valid != 0
 }
 
 // IsRGB is true if the color is an RGB specific value.
-func (c Color) IsRGB() bool {
-	return c&(Valid|IsRGB) == (Valid | IsRGB)
+func IsRGB(c Color) bool {
+	return c&(valid|isRGB) == (valid | isRGB)
 }
 
 // NewRGBFromHex returns the color's hexadecimal RGB 24-bit value with each component consisting of a single byte, ala R << 16 | G << 8 | B.
 // If the color is unknown or unset, -1 is returned.
-func (c Color) Hex() int32 {
-	if c&Valid == 0 {
+func Hex(c Color) int32 {
+	if c&valid == 0 {
 		return -1
 	}
-	if c&IsRGB != 0 {
+	if c&isRGB != 0 {
 		return int32(c) & 0xFFFFFF
 	}
 
@@ -1844,5 +1848,5 @@ func NewColor(name string) Color {
 
 // PaletteColor creates a color based on the palette index.
 func PaletteColor(index int) Color {
-	return Color(index) | Valid
+	return Color(index) | valid
 }

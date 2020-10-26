@@ -18,8 +18,8 @@ func NewTermStyle(colors int) *TermStyle {
 		palette: make([]color.Color, colors),
 	}
 	for i := 0; i < colors; i++ {
-		res.palette[i] = color.Color(i) | color.Valid
-		res.colors[color.Color(i)|color.Valid] = color.Color(i) | color.Valid // identity map for our builtin colors
+		res.palette[i] = color.Color(i) | color.ValidConst
+		res.colors[color.Color(i)|color.ValidConst] = color.Color(i) | color.ValidConst // identity map for our builtin colors
 	}
 	return &res
 }
