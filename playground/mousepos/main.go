@@ -147,7 +147,7 @@ func (r *listener) lifeCycle(ctx context.Context, cancel func()) {
 
 		size := r.engine.Size()
 		hasChange := true
-		r.engine.HideCursor()
+
 		r.init(size)
 		r.drawBox(1, 1, 42, 7, white, encoding.Space)
 		r.emitStr(2, 2, white, "Press ESC twice to exit, C to clear.")
@@ -167,6 +167,7 @@ func (r *listener) lifeCycle(ctx context.Context, cancel func()) {
 				r.emitStr(2+len(mouseStr), 4, white, fmt.Sprintf(mousePosition, mouseCol, mouseRow))
 				r.emitStr(2+len(buttonsStr), 5, white, fmt.Sprintf(buttonsInfo, bstr))
 				r.emitStr(2+len(keysStr), 6, white, fmt.Sprintf(keysInfo, keyEventName))
+				r.engine.HideCursor()
 				hasChange = false
 			}
 			select {
@@ -239,9 +240,14 @@ func NewReceiver(ctx context.Context, engine term.Engine, cancel func()) *listen
 func main() {
 	encoding.Register()
 	initLog.InitLogger()
-	engine, err := core.NewCore(os.Getenv("TERM"), core.WithFinalizer(func() {
-		log.Println("[app] core finalizer called")
-	}))
+	engine, err := core.NewCore(
+		os.Getenv("TERM"),
+		core.WithFinalizer(func() {
+			log.Println("[app] core finalizer called")
+		}),
+		//
+		//core.WithIsIntensiveDraw(true),
+	)
 	if err != nil {
 		log.Printf("[app] error : %v", err)
 		os.Exit(1)

@@ -5,7 +5,6 @@ import (
 	"context"
 	"errors"
 	"log"
-	"os"
 	"sync"
 
 	"github.com/badu/term"
@@ -99,7 +98,7 @@ func NewEventDispatcher(options ...Option) (term.MouseDispatcher, error) {
 }
 
 // LifeCycle implementation of term.MouseDispatcher interface, called from core
-func (e *eventDispatcher) LifeCycle(ctx context.Context, out *os.File) {
+func (e *eventDispatcher) LifeCycle(ctx context.Context) {
 	// mount lifecycle - listens for chunks of []byte coming via inputCh, analyses them and builds mouse events
 	e.lifeCycle(ctx)
 }

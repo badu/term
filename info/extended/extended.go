@@ -1,8 +1,6 @@
 package extended
 
 import (
-	// The following imports just register themselves --
-	// these are the terminal types we aggregate in this package.
 	_ "github.com/badu/term/info/a/aixterm"
 	_ "github.com/badu/term/info/a/alacritty"
 	_ "github.com/badu/term/info/a/ansi"
@@ -35,4 +33,5 @@ import (
 	_ "github.com/badu/term/info/x/xfce"
 	_ "github.com/badu/term/info/x/xterm"
 	_ "github.com/badu/term/info/x/xterm_kitty"
+	_ "github.com/badu/term/info/x/xterm_termite"
 )

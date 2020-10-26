@@ -20,16 +20,16 @@ type termcap struct {
 	strs    map[string]string
 }
 
-func (tc *termcap) getnum(s string) int {
-	return (tc.nums[s])
+func (c *termcap) getNum(s string) int {
+	return c.nums[s]
 }
 
-func (tc *termcap) getflag(s string) bool {
-	return (tc.bools[s])
+func (c *termcap) getFlag(s string) bool {
+	return c.bools[s]
 }
 
-func (tc *termcap) getstr(s string) string {
-	return (tc.strs[s])
+func (c *termcap) getStr(s string) string {
+	return c.strs[s]
 }
 
 const (
@@ -41,10 +41,8 @@ const (
 var errNotAddressable = errors.New("terminal not cursor addressable")
 
 func unescape(s string) string {
-	// Various escapes are in \x format.  Control codes are
-	// encoded as ^M (carat followed by ASCII equivalent).
-	// escapes are: \e, \E - escape
-	//  \0 NULL, \n \l \r \t \b \f \s for equivalent C escape.
+	// Various escapes are in \x format.  Control codes are encoded as ^M (carat followed by ASCII equivalent).
+	// escapes are: \e, \E - escape \0 NULL, \n \l \r \t \b \f \s for equivalent C escape.
 	buf := &bytes.Buffer{}
 	esc := none
 
@@ -95,24 +93,21 @@ func unescape(s string) string {
 	return (buf.String())
 }
 
-func (tc *termcap) setupterm(name string) error {
+func (c *termcap) setupterm(name string) error {
 	cmd := exec.Command("infocmp", "-1", name)
 	output := &bytes.Buffer{}
 	cmd.Stdout = output
 
-	tc.strs = make(map[string]string)
-	tc.bools = make(map[string]bool)
-	tc.nums = make(map[string]int)
+	c.strs = make(map[string]string)
+	c.bools = make(map[string]bool)
+	c.nums = make(map[string]int)
 
 	if err := cmd.Run(); err != nil {
 		return err
 	}
 
 	// Now parse the output.
-	// We get comment lines (starting with "#"), followed by
-	// a header line that looks like "<name>|<alias>|...|<desc>"
-	// then capabilities, one per line, starting with a tab and ending
-	// with a comma and newline.
+	// We get comment lines (starting with "#"), followed by a header line that looks like "<name>|<alias>|...|<desc>" then capabilities, one per line, starting with a tab and ending with a comma and newline.
 	lines := strings.Split(output.String(), "\n")
 	for len(lines) > 0 && strings.HasPrefix(lines[0], "#") {
 		lines = lines[1:]
@@ -127,13 +122,13 @@ func (tc *termcap) setupterm(name string) error {
 		header = header[:len(header)-1]
 	}
 	names := strings.Split(header, "|")
-	tc.name = names[0]
+	c.name = names[0]
 	names = names[1:]
 	if len(names) > 0 {
-		tc.desc = names[len(names)-1]
+		c.desc = names[len(names)-1]
 		names = names[:len(names)-1]
 	}
-	tc.aliases = names
+	c.aliases = names
 	for _, val := range lines[1:] {
 		if (!strings.HasPrefix(val, "\t")) ||
 			(!strings.HasSuffix(val, ",")) {
@@ -144,23 +139,22 @@ func (tc *termcap) setupterm(name string) error {
 		val = val[:len(val)-1]
 
 		if k := strings.SplitN(val, "=", 2); len(k) == 2 {
-			tc.strs[k[0]] = unescape(k[1])
+			c.strs[k[0]] = unescape(k[1])
 		} else if k := strings.SplitN(val, "#", 2); len(k) == 2 {
 			u, err := strconv.ParseUint(k[1], 0, 0)
 			if err != nil {
 				return (err)
 			}
-			tc.nums[k[0]] = int(u)
+			c.nums[k[0]] = int(u)
 		} else {
-			tc.bools[val] = true
+			c.bools[val] = true
 		}
 	}
 	return nil
 }
 
-// LoadTerminfo creates a Terminfo by for named terminal by attempting to parse
-// the output from infocmp.  This returns the terminfo entry, a description of
-// the terminal, and either nil or an error.
+// LoadTerminfo creates a Terminfo by for named terminal by attempting to parse the output from infocmp.
+// This returns the terminfo entry, a description of the terminal, and either nil or an error.
 func LoadTerminfo(name string) (*info.Term, string, error) {
 	var tc termcap
 	if err := tc.setupterm(name); err != nil {
@@ -175,71 +169,70 @@ func LoadTerminfo(name string) (*info.Term, string, error) {
 		return t, "", nil
 	}
 	t.Aliases = tc.aliases
-	t.Colors = tc.getnum("colors")
-	t.Columns = tc.getnum("cols")
-	t.Lines = tc.getnum("lines")
-	t.Bell = tc.getstr("bel")
-	t.Clear = tc.getstr("clear")
-	t.EnterCA = tc.getstr("smcup")
-	t.ExitCA = tc.getstr("rmcup")
-	t.ShowCursor = tc.getstr("cnorm")
-	t.HideCursor = tc.getstr("civis")
-	t.AttrOff = tc.getstr("sgr0")
-	t.Underline = tc.getstr("smul")
-	t.Bold = tc.getstr("bold")
-	t.Blink = tc.getstr("blink")
-	t.Dim = tc.getstr("dim")
-	t.Italic = tc.getstr("sitm")
-	t.Reverse = tc.getstr("rev")
-	t.EnterKeypad = tc.getstr("smkx")
-	t.ExitKeypad = tc.getstr("rmkx")
-	t.SetFg = tc.getstr("setaf")
-	t.SetBg = tc.getstr("setab")
-	t.SetCursor = tc.getstr("cup")
-	t.CursorBack1 = tc.getstr("cub1")
-	t.CursorUp1 = tc.getstr("cuu1")
-	t.KeyF1 = tc.getstr("kf1")
-	t.KeyF2 = tc.getstr("kf2")
-	t.KeyF3 = tc.getstr("kf3")
-	t.KeyF4 = tc.getstr("kf4")
-	t.KeyF5 = tc.getstr("kf5")
-	t.KeyF6 = tc.getstr("kf6")
-	t.KeyF7 = tc.getstr("kf7")
-	t.KeyF8 = tc.getstr("kf8")
-	t.KeyF9 = tc.getstr("kf9")
-	t.KeyF10 = tc.getstr("kf10")
-	t.KeyF11 = tc.getstr("kf11")
-	t.KeyF12 = tc.getstr("kf12")
-	t.KeyInsert = tc.getstr("kich1")
-	t.KeyDelete = tc.getstr("kdch1")
-	t.KeyBackspace = tc.getstr("kbs")
-	t.KeyHome = tc.getstr("khome")
-	t.KeyEnd = tc.getstr("kend")
-	t.KeyUp = tc.getstr("kcuu1")
-	t.KeyDown = tc.getstr("kcud1")
-	t.KeyRight = tc.getstr("kcuf1")
-	t.KeyLeft = tc.getstr("kcub1")
-	t.KeyPgDn = tc.getstr("knp")
-	t.KeyPgUp = tc.getstr("kpp")
-	t.KeyBacktab = tc.getstr("kcbt")
-	t.KeyExit = tc.getstr("kext")
-	t.KeyCancel = tc.getstr("kcan")
-	t.KeyPrint = tc.getstr("kprt")
-	t.KeyHelp = tc.getstr("khlp")
-	t.KeyClear = tc.getstr("kclr")
-	t.AltChars = tc.getstr("acsc")
-	t.EnterAcs = tc.getstr("smacs")
-	t.ExitAcs = tc.getstr("rmacs")
-	t.EnableAcs = tc.getstr("enacs")
-	t.Mouse = tc.getstr("kmous")
-	t.KeyShfRight = tc.getstr("kRIT")
-	t.KeyShfLeft = tc.getstr("kLFT")
-	t.KeyShfHome = tc.getstr("kHOM")
-	t.KeyShfEnd = tc.getstr("kEND")
+	t.Colors = tc.getNum("colors")
+	t.Columns = tc.getNum("cols")
+	t.Lines = tc.getNum("lines")
+	t.Bell = tc.getStr("bel")
+	t.Clear = tc.getStr("clear")
+	t.EnterCA = tc.getStr("smcup")
+	t.ExitCA = tc.getStr("rmcup")
+	t.ShowCursor = tc.getStr("cnorm")
+	t.HideCursor = tc.getStr("civis")
+	t.AttrOff = tc.getStr("sgr0")
+	t.Underline = tc.getStr("smul")
+	t.Bold = tc.getStr("bold")
+	t.Blink = tc.getStr("blink")
+	t.Dim = tc.getStr("dim")
+	t.Italic = tc.getStr("sitm")
+	t.Reverse = tc.getStr("rev")
+	t.EnterKeypad = tc.getStr("smkx")
+	t.ExitKeypad = tc.getStr("rmkx")
+	t.SetFg = tc.getStr("setaf")
+	t.SetBg = tc.getStr("setab")
+	t.SetCursor = tc.getStr("cup")
+	t.CursorBack1 = tc.getStr("cub1")
+	t.CursorUp1 = tc.getStr("cuu1")
+	t.KeyF1 = tc.getStr("kf1")
+	t.KeyF2 = tc.getStr("kf2")
+	t.KeyF3 = tc.getStr("kf3")
+	t.KeyF4 = tc.getStr("kf4")
+	t.KeyF5 = tc.getStr("kf5")
+	t.KeyF6 = tc.getStr("kf6")
+	t.KeyF7 = tc.getStr("kf7")
+	t.KeyF8 = tc.getStr("kf8")
+	t.KeyF9 = tc.getStr("kf9")
+	t.KeyF10 = tc.getStr("kf10")
+	t.KeyF11 = tc.getStr("kf11")
+	t.KeyF12 = tc.getStr("kf12")
+	t.KeyInsert = tc.getStr("kich1")
+	t.KeyDelete = tc.getStr("kdch1")
+	t.KeyBackspace = tc.getStr("kbs")
+	t.KeyHome = tc.getStr("khome")
+	t.KeyEnd = tc.getStr("kend")
+	t.KeyUp = tc.getStr("kcuu1")
+	t.KeyDown = tc.getStr("kcud1")
+	t.KeyRight = tc.getStr("kcuf1")
+	t.KeyLeft = tc.getStr("kcub1")
+	t.KeyPgDn = tc.getStr("knp")
+	t.KeyPgUp = tc.getStr("kpp")
+	t.KeyBacktab = tc.getStr("kcbt")
+	t.KeyExit = tc.getStr("kext")
+	t.KeyCancel = tc.getStr("kcan")
+	t.KeyPrint = tc.getStr("kprt")
+	t.KeyHelp = tc.getStr("khlp")
+	t.KeyClear = tc.getStr("kclr")
+	t.AltChars = tc.getStr("acsc")
+	t.EnterAcs = tc.getStr("smacs")
+	t.ExitAcs = tc.getStr("rmacs")
+	t.EnableAcs = tc.getStr("enacs")
+	t.Mouse = tc.getStr("kmous")
+	t.KeyShfRight = tc.getStr("kRIT")
+	t.KeyShfLeft = tc.getStr("kLFT")
+	t.KeyShfHome = tc.getStr("kHOM")
+	t.KeyShfEnd = tc.getStr("kEND")
 
-	// Terminfo lacks descriptions for a bunch of modified keys,
-	// but modern XTerm and emulators often have them.  Let's add them,
-	// if the shifted right and left arrows are defined.
+	// Terminfo lacks descriptions for a bunch of modified keys, but modern XTerm and emulators often have them.
+	// Let's add them, if the shifted right and left arrows are defined.
 	if t.KeyShfRight == "\x1b[1;2C" && t.KeyShfLeft == "\x1b[1;2D" {
 		t.KeyShfUp = "\x1b[1;2A"
 		t.KeyShfDown = "\x1b[1;2B"
@@ -288,8 +281,7 @@ func LoadTerminfo(name string) (*info.Term, string, error) {
 	}
 
 	// And the same thing for rxvt and workalikes (Eterm, aterm, etc.)
-	// It seems that urxvt at least send escaped as ALT prefix for these,
-	// although some places seem to indicate a separate ALT key sesquence.
+	// It seems that urxvt at least send escaped as ALT prefix for these, although some places seem to indicate a separate ALT key sesquence.
 	if t.KeyShfRight == "\x1b[c" && t.KeyShfLeft == "\x1b[d" {
 		t.KeyShfUp = "\x1b[a"
 		t.KeyShfDown = "\x1b[b"
@@ -303,22 +295,27 @@ func LoadTerminfo(name string) (*info.Term, string, error) {
 		t.KeyCtrlEnd = "\x1b[8^"
 	}
 
-	// If the kmous entry is present, then we need to record the
-	// the codes to enter and exit mouse mode.  Sadly, this is not
-	// part of the terminfo databases anywhere that I've found, but
-	// is an extension.  The escapedape codes are documented in the XTerm
-	// manual, and all terminals that have kmous are expected to
-	// use these same codes, unless explicitly configured otherwise
-	// vi XM.  Note that in any event, we only known how to parse either
-	// x11 or SGR mouse events -- if your terminal doesn't support one
-	// of these two forms, you maybe out of luck.
-	t.MouseMode = tc.getstr("XM")
+	// Technically the RGB flag that is provided for xterm-direct is not quite right.
+	// The problem is that the -direct flag that was introduced with ncurses 6.1 requires a parsing for the parameters that we lack.
+	// For this case we'll just assume it's XTerm compatible.
+	// Someday this may be incorrect, but right now it is correct, and nobody uses it anyway.
+	if tc.getFlag("Tc") {
+		// This presumes XTerm 24-bit true color.
+		t.TrueColor = true
+	} else if tc.getFlag("RGB") {
+		// This is for xterm-direct, which uses a different scheme entirely.
+		// (ncurses went a very different direction from everyone else, and so it's unlikely anything is using this definition.)
+		t.TrueColor = true
+		t.SetBg = "\x1b[%?%p1%{8}%<%t4%p1%d%e%p1%{16}%<%t10%p1%{8}%-%d%e48;5;%p1%d%;m"
+		t.SetFg = "\x1b[%?%p1%{8}%<%t3%p1%d%e%p1%{16}%<%t9%p1%{8}%-%d%e38;5;%p1%d%;m"
+	}
+
+	// If the kmous entry is present, then we need to record the the codes to enter and exit mouse mode.  Sadly, this is not part of the terminfo databases anywhere that I've found, but is an extension.
+	// The escapedape codes are documented in the XTerm manual, and all terminals that have kmous are expected to use these same codes, unless explicitly configured otherwise vi XM.
+	// Note that in any event, we only known how to parse either x11 or SGR mouse events -- if your terminal doesn't support one of these two forms, you maybe out of luck.
+	t.MouseMode = tc.getStr("XM")
 	if t.Mouse != "" && t.MouseMode == "" {
-		// we anticipate that all xterm mouse tracking compatible
-		// terminals understand mouse tracking (1000), but we hope
-		// that those that don't understand any-event tracking (1003)
-		// will at least ignore it.  Likewise we hope that terminals
-		// that don't understand SGR reporting (1006) just ignore it.
+		// we anticipate that all xterm mouse tracking compatible terminals understand mouse tracking (1000), but we hope that those that don't understand any-event tracking (1003) will at least ignore it.  Likewise we hope that terminals that don't understand SGR reporting (1006) just ignore it.
 		t.MouseMode = "%?%p1%{1}%=%t%'h'%Pa%e%'l'%Pa%;" +
 			"\x1b[?1000%ga%c\x1b[?1002%ga%c\x1b[?1003%ga%c\x1b[?1006%ga%c"
 	}
@@ -331,17 +328,15 @@ func LoadTerminfo(name string) (*info.Term, string, error) {
 		return nil, "", errNotAddressable
 	}
 
-	// For padding, we lookup the pad char.  If that isn't present,
-	// and npc is *not* set, then we assume a null byte.
-	t.PadChar = tc.getstr("pad")
+	// For padding, we lookup the pad char.  If that isn't present, and npc is *not* set, then we assume a null byte.
+	t.PadChar = tc.getStr("pad")
 	if t.PadChar == "" {
-		if !tc.getflag("npc") {
+		if !tc.getFlag("npc") {
 			t.PadChar = "\u0000"
 		}
 	}
 
-	// For terminals that use "standard" SGR sequences, lets combine the
-	// foreground and background together.
+	// For terminals that use "standard" SGR sequences, lets combine the foreground and background together.
 	if strings.HasPrefix(t.SetFg, "\x1b[") &&
 		strings.HasPrefix(t.SetBg, "\x1b[") &&
 		strings.HasSuffix(t.SetFg, "m") &&

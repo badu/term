@@ -1,5 +1,3 @@
-// Generated automatically.  DO NOT HAND-EDIT.
-
 package xterm
 
 import "github.com/badu/term/info"

@@ -3,7 +3,6 @@ package term
 import (
 	"context"
 	"image"
-	"os"
 
 	"github.com/badu/term/color"
 	"github.com/badu/term/style"
@@ -25,6 +24,11 @@ type ResizeListener interface {
 	ResizeListen() chan ResizeEvent
 }
 
+// Lifecycler implements a context cancel listener
+type Lifecycler interface {
+	LifeCycle(ctx context.Context)
+}
+
 // InputListener is implemented by MouseDispatcher and KeyDispatcher
 type InputListener interface {
 	InChan() chan []byte
@@ -40,8 +44,8 @@ type ResizeDispatcher interface {
 type MouseDispatcher interface {
 	ResizeListener
 	InputListener
+	Lifecycler
 	Register(r MouseListener)
-	LifeCycle(ctx context.Context, out *os.File)
 	Enable()
 	Disable()
 }
@@ -91,8 +95,8 @@ type KeyListener interface {
 type KeyDispatcher interface {
 	Death
 	InputListener
+	Lifecycler
 	Register(r KeyListener)
-	LifeCycle(ctx context.Context)
 	HasKey(k Key) bool
 }
 

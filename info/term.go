@@ -13,7 +13,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/badu/term"
 	"github.com/badu/term/color"
 )
 
@@ -165,7 +164,6 @@ func (s *stack) popBool() bool {
 // Note that we use friendly names in Go, but when we write out JSON, we use the same names as info.
 // The name, aliases and smous, rmous fields do not come from info directly.
 type Term struct {
-	*paramsBuffer
 	Columns      int // cols
 	Width        int
 	Lines        int // lines
@@ -286,9 +284,18 @@ type Term struct {
 	KeyAltShfEnd    string
 	KeyMetaShfHome  string
 	KeyMetaShfEnd   string
-	svars           [26]string
 	Aliases         []string
-	// caching
+	TrueColor       bool // true if the terminal supports direct color
+}
+
+type Commander struct {
+	*paramsBuffer
+	bGotos         *gotoCache
+	bColors        *colorCache
+	Colors         int // colors
+	Columns        int // cols
+	Lines          int // lines
+	svars          [26]string
 	bEnterCA       []byte
 	bHideCursor    []byte
 	bShowCursor    []byte
@@ -307,9 +314,20 @@ type Term struct {
 	bResetFgBg     []byte
 	bEnableMouse   []byte
 	bDisableMouse  []byte
-	bGotos         *gotoCache
-	bColors        *colorCache
-	TrueColor      bool // true if the terminal supports direct color
+	PadChar        string
+	SetFg          string // setaf
+	SetBg          string // setab
+	SetFgBg        string // setfgbg
+	SetFgBgRGB     string // setfgbgrgb
+	SetFgRGB       string // setfrgb
+	SetBgRGB       string // setbrgb
+	SetCursor      string // cup
+	EnterAcs       string // smacs
+	ExitAcs        string // rmacs
+	AltChars       string // acsc
+	Clear          string // clear
+	HasMouse       bool
+	HasHideCursor  bool
 }
 
 type colorCache struct {
@@ -362,7 +380,7 @@ func (pb *paramsBuffer) putString(s string) {
 }
 
 // TParam takes a info parameterized string, such as setaf or cup, and evaluates the string, and returns the result with the parameter applied.
-func (t *Term) TParam(s string, ints ...int) string {
+func (t *Commander) TParam(s string, ints ...int) string {
 	var (
 		dvars  [26]string
 		a, b   string
@@ -628,7 +646,7 @@ func (t *Term) TParam(s string, ints ...int) string {
 
 // WriteString emits the string to the writer, but expands inline padding indications (of the form $<[delay]> where [delay] is msec) to a suitable time (unless the info string indicates this isn't needed by specifying npc - no padding).
 // All Term based strings should be emitted using this function.
-func (t *Term) WriteString(w io.Writer, s string) error {
+func (t *Commander) WriteString(w io.Writer, s string) error {
 	for {
 		beg := strings.Index(s, "$<")
 		if beg < 0 {
@@ -685,7 +703,7 @@ func (t *Term) WriteString(w io.Writer, s string) error {
 
 // WriteString emits the string to the writer, but expands inline padding indications (of the form $<[delay]> where [delay] is msec) to a suitable time (unless the info string indicates this isn't needed by specifying npc - no padding).
 // All Term based strings should be emitted using this function.
-func (t *Term) WriteBytes(w io.Writer, s []byte) error {
+func (t *Commander) WriteBytes(w io.Writer, s []byte) error {
 	for {
 		beg := bytes.Index(s, []byte("$<"))
 		if beg < 0 {
@@ -744,7 +762,7 @@ func (t *Term) WriteBytes(w io.Writer, s []byte) error {
 
 // TColor returns a string corresponding to the given foreground and background colors.
 // Either fg or bg can be set to -1 to elide.
-func (t *Term) TColor(fi, bi int) string {
+func (t *Commander) TColor(fi, bi int) string {
 	rv := ""
 	// As a special case, we map bright colors to lower versions if the color table only holds 8.
 	// For the remaining 240 colors, the user is out of luck.
@@ -766,7 +784,7 @@ func (t *Term) TColor(fi, bi int) string {
 	return rv
 }
 
-func (t *Term) PutEnterCA(w io.Writer) {
+func (t *Commander) PutEnterCA(w io.Writer) {
 	if _, err := w.Write(t.bEnterCA); err != nil {
 		if Debug {
 			log.Printf("error writing to out : %v", err)
@@ -774,7 +792,7 @@ func (t *Term) PutEnterCA(w io.Writer) {
 	}
 }
 
-func (t *Term) PutHideCursor(w io.Writer) {
+func (t *Commander) PutHideCursor(w io.Writer) {
 	if _, err := w.Write(t.bHideCursor); err != nil {
 		if Debug {
 			log.Printf("error writing to out : %v", err)
@@ -782,7 +800,7 @@ func (t *Term) PutHideCursor(w io.Writer) {
 	}
 }
 
-func (t *Term) PutShowCursor(w io.Writer) {
+func (t *Commander) PutShowCursor(w io.Writer) {
 	if _, err := w.Write(t.bShowCursor); err != nil {
 		if Debug {
 			log.Printf("error writing to out : %v", err)
@@ -790,7 +808,7 @@ func (t *Term) PutShowCursor(w io.Writer) {
 	}
 }
 
-func (t *Term) PutEnableAcs(w io.Writer) {
+func (t *Commander) PutEnableAcs(w io.Writer) {
 	if _, err := w.Write(t.bEnableAcs); err != nil {
 		if Debug {
 			log.Printf("error writing to out : %v", err)
@@ -798,7 +816,7 @@ func (t *Term) PutEnableAcs(w io.Writer) {
 	}
 }
 
-func (t *Term) PutClear(w io.Writer) {
+func (t *Commander) PutClear(w io.Writer) {
 	if _, err := w.Write(t.bClear); err != nil {
 		if Debug {
 			log.Printf("error writing to out : %v", err)
@@ -806,7 +824,7 @@ func (t *Term) PutClear(w io.Writer) {
 	}
 }
 
-func (t *Term) PutAttrOff(w io.Writer) {
+func (t *Commander) PutAttrOff(w io.Writer) {
 	if _, err := w.Write(t.bAttrOff); err != nil {
 		if Debug {
 			log.Printf("error writing to out : %v", err)
@@ -814,7 +832,7 @@ func (t *Term) PutAttrOff(w io.Writer) {
 	}
 }
 
-func (t *Term) PutExitCA(w io.Writer) {
+func (t *Commander) PutExitCA(w io.Writer) {
 	if _, err := w.Write(t.bExitCA); err != nil {
 		if Debug {
 			log.Printf("error writing to out : %v", err)
@@ -822,7 +840,7 @@ func (t *Term) PutExitCA(w io.Writer) {
 	}
 }
 
-func (t *Term) PutExitKeypad(w io.Writer) {
+func (t *Commander) PutExitKeypad(w io.Writer) {
 	if _, err := w.Write(t.bExitKeypad); err != nil {
 		if Debug {
 			log.Printf("error writing to out : %v", err)
@@ -830,7 +848,7 @@ func (t *Term) PutExitKeypad(w io.Writer) {
 	}
 }
 
-func (t *Term) PutBold(w io.Writer) {
+func (t *Commander) PutBold(w io.Writer) {
 	if _, err := w.Write(t.bBold); err != nil {
 		if Debug {
 			log.Printf("error writing to out : %v", err)
@@ -838,7 +856,7 @@ func (t *Term) PutBold(w io.Writer) {
 	}
 }
 
-func (t *Term) PutUnderline(w io.Writer) {
+func (t *Commander) PutUnderline(w io.Writer) {
 	if _, err := w.Write(t.bUnderline); err != nil {
 		if Debug {
 			log.Printf("error writing to out : %v", err)
@@ -846,7 +864,7 @@ func (t *Term) PutUnderline(w io.Writer) {
 	}
 }
 
-func (t *Term) PutReverse(w io.Writer) {
+func (t *Commander) PutReverse(w io.Writer) {
 	if _, err := w.Write(t.bReverse); err != nil {
 		if Debug {
 			log.Printf("error writing to out : %v", err)
@@ -854,7 +872,7 @@ func (t *Term) PutReverse(w io.Writer) {
 	}
 }
 
-func (t *Term) PutBlink(w io.Writer) {
+func (t *Commander) PutBlink(w io.Writer) {
 	if _, err := w.Write(t.bBlink); err != nil {
 		if Debug {
 			log.Printf("error writing to out : %v", err)
@@ -862,7 +880,7 @@ func (t *Term) PutBlink(w io.Writer) {
 	}
 }
 
-func (t *Term) PutDim(w io.Writer) {
+func (t *Commander) PutDim(w io.Writer) {
 	if _, err := w.Write(t.bDim); err != nil {
 		if Debug {
 			log.Printf("error writing to out : %v", err)
@@ -870,7 +888,7 @@ func (t *Term) PutDim(w io.Writer) {
 	}
 }
 
-func (t *Term) PutItalic(w io.Writer) {
+func (t *Commander) PutItalic(w io.Writer) {
 	if _, err := w.Write(t.bItalic); err != nil {
 		if Debug {
 			log.Printf("error writing to out : %v", err)
@@ -878,7 +896,7 @@ func (t *Term) PutItalic(w io.Writer) {
 	}
 }
 
-func (t *Term) PutStrikeThrough(w io.Writer) {
+func (t *Commander) PutStrikeThrough(w io.Writer) {
 	if _, err := w.Write(t.bStrikeThrough); err != nil {
 		if Debug {
 			log.Printf("error writing to out : %v", err)
@@ -886,7 +904,7 @@ func (t *Term) PutStrikeThrough(w io.Writer) {
 	}
 }
 
-func (t *Term) PutResetFgBg(w io.Writer) {
+func (t *Commander) PutResetFgBg(w io.Writer) {
 	if _, err := w.Write(t.bResetFgBg); err != nil {
 		if Debug {
 			log.Printf("error writing to out : %v", err)
@@ -894,8 +912,8 @@ func (t *Term) PutResetFgBg(w io.Writer) {
 	}
 }
 
-func (t *Term) PutEnableMouse(w io.Writer) {
-	if len(t.Mouse) == 0 {
+func (t *Commander) PutEnableMouse(w io.Writer) {
+	if !t.HasMouse {
 		return
 	}
 	if _, err := w.Write(t.bEnableMouse); err != nil {
@@ -905,8 +923,8 @@ func (t *Term) PutEnableMouse(w io.Writer) {
 	}
 }
 
-func (t *Term) PutDisableMouse(w io.Writer) {
-	if len(t.Mouse) == 0 {
+func (t *Commander) PutDisableMouse(w io.Writer) {
+	if !t.HasMouse {
 		return
 	}
 	if _, err := w.Write(t.bDisableMouse); err != nil {
@@ -918,7 +936,7 @@ func (t *Term) PutDisableMouse(w io.Writer) {
 
 // GoTo for addressing the cursor at the given row and column.
 // The origin 0, 0 is in the upper left corner of the screen.
-func (t *Term) GoTo(w io.Writer, column, row int) {
+func (t *Commander) GoTo(w io.Writer, column, row int) {
 	v, ok := t.bGotos.mapb[hash(row, column)]
 	if !ok { // not found : storing
 		gotoStr := t.TParam(t.SetCursor, row, column)
@@ -936,7 +954,7 @@ func hash(row, column int) int {
 	return ((row & 0xFFFF) << 16) | (column & 0xFFFF) // X is row, Y is column
 }
 
-func (t *Term) WriteBothColors(w io.Writer, fg, bg color.Color, isDelighted bool) {
+func (t *Commander) WriteBothColors(w io.Writer, fg, bg color.Color, isDelighted bool) {
 	fgAndBgNames := ""
 	if isDelighted {
 		fgAndBgNames = fmt.Sprintf("0xFF_%06X_%06X", fg.Hex(), bg.Hex())
@@ -963,7 +981,7 @@ func (t *Term) WriteBothColors(w io.Writer, fg, bg color.Color, isDelighted bool
 	}
 }
 
-func (t *Term) WriteColor(w io.Writer, c color.Color, isForeground, isDelighted bool) {
+func (t *Commander) WriteColor(w io.Writer, c color.Color, isForeground, isDelighted bool) {
 	colorName := ""
 	if isDelighted {
 		colorName = fmt.Sprintf("0xFF_%06X", c.Hex())
@@ -982,9 +1000,9 @@ func (t *Term) WriteColor(w io.Writer, c color.Color, isForeground, isDelighted 
 		} else {
 			r, g, b := c.RGB()
 			if isForeground {
-				cs = t.TParam(t.SetFgRGB, int(r), int(g), int(b))
+				cs = t.TParam(t.SetFgRGB, r, g, b)
 			} else {
-				cs = t.TParam(t.SetBgRGB, int(r), int(g), int(b))
+				cs = t.TParam(t.SetBgRGB, r, g, b)
 			}
 		}
 		cb = []byte(cs)
@@ -997,150 +1015,168 @@ func (t *Term) WriteColor(w io.Writer, c color.Color, isForeground, isDelighted 
 	}
 }
 
-func (t *Term) Init(w io.Writer, size *term.Size) {
+func NewCommander(ti *Term) *Commander {
+	res := Commander{}
 	// goto optimization : cache the goto instructions for each cell
-	t.bGotos = &gotoCache{mapb: make(map[int][]byte)}
-	t.bColors = &colorCache{mapb: make(map[string][]byte)}
+	res.bGotos = &gotoCache{mapb: make(map[int][]byte)}
+	res.bColors = &colorCache{mapb: make(map[string][]byte)}
 	// optimisation : some of the commonly used strings are prepared as []byte
 	buf := bytes.NewBuffer(nil)
-	if err := t.WriteString(buf, t.EnterCA); err != nil {
+	if err := res.WriteString(buf, ti.EnterCA); err != nil {
 		if Debug {
 			log.Printf("error making bytes : %v", err)
 		}
 	}
-	t.bEnterCA = buf.Bytes()
+	res.bEnterCA = buf.Bytes()
 	buf.Reset()
-	if err := t.WriteString(buf, t.HideCursor); err != nil {
+	if err := res.WriteString(buf, ti.HideCursor); err != nil {
 		if Debug {
 			log.Printf("error making bytes : %v", err)
 		}
 	}
-	t.bHideCursor = buf.Bytes()
+	res.bHideCursor = buf.Bytes()
+	res.HasHideCursor = len(ti.HideCursor) != 0
 	buf.Reset()
-	if err := t.WriteString(buf, t.ShowCursor); err != nil {
+	if err := res.WriteString(buf, ti.ShowCursor); err != nil {
 		if Debug {
 			log.Printf("error making bytes : %v", err)
 		}
 	}
-	t.bShowCursor = buf.Bytes()
+	res.bShowCursor = buf.Bytes()
 	buf.Reset()
-	if err := t.WriteString(buf, t.EnableAcs); err != nil {
+	if err := res.WriteString(buf, ti.EnableAcs); err != nil {
 		if Debug {
 			log.Printf("error making bytes : %v", err)
 		}
 	}
-	t.bEnableAcs = buf.Bytes()
+	res.bEnableAcs = buf.Bytes()
 	buf.Reset()
-	if err := t.WriteString(buf, t.Clear); err != nil {
+	if err := res.WriteString(buf, ti.Clear); err != nil {
 		if Debug {
 			log.Printf("error making bytes : %v", err)
 		}
 	}
-	t.bClear = buf.Bytes()
+	res.bClear = buf.Bytes()
 	buf.Reset()
-	if err := t.WriteString(buf, t.AttrOff); err != nil {
+	if err := res.WriteString(buf, ti.AttrOff); err != nil {
 		if Debug {
 			log.Printf("error making bytes : %v", err)
 		}
 	}
-	t.bAttrOff = buf.Bytes()
+	res.bAttrOff = buf.Bytes()
 	buf.Reset()
-	if err := t.WriteString(buf, t.ExitCA); err != nil {
+	if err := res.WriteString(buf, ti.ExitCA); err != nil {
 		if Debug {
 			log.Printf("error making bytes : %v", err)
 		}
 	}
-	t.bExitCA = buf.Bytes()
+	res.bExitCA = buf.Bytes()
 	buf.Reset()
-	if err := t.WriteString(buf, t.ExitKeypad); err != nil {
+	if err := res.WriteString(buf, ti.ExitKeypad); err != nil {
 		if Debug {
 			log.Printf("error making bytes : %v", err)
 		}
 	}
-	t.bExitKeypad = buf.Bytes()
+	res.bExitKeypad = buf.Bytes()
 	buf.Reset()
-	if err := t.WriteString(buf, t.Bold); err != nil {
+	if err := res.WriteString(buf, ti.Bold); err != nil {
 		if Debug {
 			log.Printf("error making bytes : %v", err)
 		}
 	}
-	t.bBold = buf.Bytes()
+	res.bBold = buf.Bytes()
 	buf.Reset()
-	if err := t.WriteString(buf, t.Underline); err != nil {
+	if err := res.WriteString(buf, ti.Underline); err != nil {
 		if Debug {
 			log.Printf("error making bytes : %v", err)
 		}
 	}
-	t.bUnderline = buf.Bytes()
+	res.bUnderline = buf.Bytes()
 	buf.Reset()
-	if err := t.WriteString(buf, t.Reverse); err != nil {
+	if err := res.WriteString(buf, ti.Reverse); err != nil {
 		if Debug {
 			log.Printf("error making bytes : %v", err)
 		}
 	}
-	t.bReverse = buf.Bytes()
+	res.bReverse = buf.Bytes()
 	buf.Reset()
-	if err := t.WriteString(buf, t.Blink); err != nil {
+	if err := res.WriteString(buf, ti.Blink); err != nil {
 		if Debug {
 			log.Printf("error making bytes : %v", err)
 		}
 	}
-	t.bBlink = buf.Bytes()
+	res.bBlink = buf.Bytes()
 	buf.Reset()
-	if err := t.WriteString(buf, t.Dim); err != nil {
+	if err := res.WriteString(buf, ti.Dim); err != nil {
 		if Debug {
 			log.Printf("error making bytes : %v", err)
 		}
 	}
-	t.bDim = buf.Bytes()
+	res.bDim = buf.Bytes()
 	buf.Reset()
-	if err := t.WriteString(buf, t.Italic); err != nil {
+	if err := res.WriteString(buf, ti.Italic); err != nil {
 		if Debug {
 			log.Printf("error making bytes : %v", err)
 		}
 	}
-	t.bItalic = buf.Bytes()
+	res.bItalic = buf.Bytes()
 	buf.Reset()
-	if err := t.WriteString(buf, t.StrikeThrough); err != nil {
+	if err := res.WriteString(buf, ti.StrikeThrough); err != nil {
 		if Debug {
 			log.Printf("error making bytes : %v", err)
 		}
 	}
-	t.bStrikeThrough = buf.Bytes()
+	res.bStrikeThrough = buf.Bytes()
 	buf.Reset()
-	if err := t.WriteString(buf, t.ResetFgBg); err != nil {
+	if err := res.WriteString(buf, ti.ResetFgBg); err != nil {
 		if Debug {
 			log.Printf("error making bytes : %v", err)
 		}
 	}
-	t.bResetFgBg = buf.Bytes()
+	res.bResetFgBg = buf.Bytes()
 
-	enableMouse := t.TParam(t.MouseMode, 1)
-	t.bEnableMouse = []byte(enableMouse)
-	disableMouse := t.TParam(t.MouseMode, 0)
-	t.bDisableMouse = []byte(disableMouse)
+	res.HasMouse = len(ti.Mouse) != 0
+	if res.HasMouse {
+		enableMouse := res.TParam(ti.MouseMode, 1)
+		res.bEnableMouse = []byte(enableMouse)
+		disableMouse := res.TParam(ti.MouseMode, 0)
+		res.bDisableMouse = []byte(disableMouse)
+	}
+	res.PadChar = ti.PadChar
+	res.Colors = ti.Colors
+	res.SetFg = ti.SetFg
+	res.SetBg = ti.SetBg
+	res.SetFgBg = ti.SetFgBg
+	res.SetFgBgRGB = ti.SetFgBgRGB
+	res.SetCursor = ti.SetCursor
+	res.Clear = ti.Clear
+	res.Lines = ti.Lines
+	res.Columns = ti.Columns
+	res.AltChars = ti.AltChars
+	res.EnterAcs = ti.EnterAcs
+	res.ExitAcs = ti.ExitAcs
 
 	if Debug {
-		log.Printf("EnterCA = %#v", t.bEnterCA)
-		log.Printf("HideCursor = %#v", t.bHideCursor)
-		log.Printf("ShowCursor = %#v", t.bShowCursor)
-		log.Printf("EnableAcs = %#v", t.bEnableAcs)
-		log.Printf("Clear = %#v", t.bClear)
-		log.Printf("AttrOff = %#v", t.bAttrOff)
-		log.Printf("ExitCA = %#v", t.bExitCA)
-		log.Printf("ExitKeypad = %#v", t.bExitKeypad)
-		log.Printf("Bold = %#v", t.bBold)
-		log.Printf("Underline = %#v", t.bUnderline)
-		log.Printf("Reverse = %#v", t.bReverse)
-		log.Printf("Blink = %#v", t.bBlink)
-		log.Printf("Dim = %#v", t.bDim)
-		log.Printf("Italic = %#v", t.bItalic)
-		log.Printf("StrikeThrough = %#v", t.bStrikeThrough)
-		log.Printf("ResetFgBg = %#v", t.bResetFgBg)
-		log.Printf("EnableMouse = %#v", t.bEnableMouse)
-		log.Printf("DisableMouse = %#v", t.bDisableMouse)
+		log.Printf("EnterCA = %#v", res.bEnterCA)
+		log.Printf("HideCursor = %#v", res.bHideCursor)
+		log.Printf("ShowCursor = %#v", res.bShowCursor)
+		log.Printf("EnableAcs = %#v", res.bEnableAcs)
+		log.Printf("Clear = %#v", res.bClear)
+		log.Printf("AttrOff = %#v", res.bAttrOff)
+		log.Printf("ExitCA = %#v", res.bExitCA)
+		log.Printf("ExitKeypad = %#v", res.bExitKeypad)
+		log.Printf("Bold = %#v", res.bBold)
+		log.Printf("Underline = %#v", res.bUnderline)
+		log.Printf("Reverse = %#v", res.bReverse)
+		log.Printf("Blink = %#v", res.bBlink)
+		log.Printf("Dim = %#v", res.bDim)
+		log.Printf("Italic = %#v", res.bItalic)
+		log.Printf("StrikeThrough = %#v", res.bStrikeThrough)
+		log.Printf("ResetFgBg = %#v", res.bResetFgBg)
+		log.Printf("EnableMouse = %#v", res.bEnableMouse)
+		log.Printf("DisableMouse = %#v", res.bDisableMouse)
 	}
-
+	return &res
 }
 
 var (
@@ -1155,6 +1191,13 @@ func AddTerminfo(t *Term) {
 	for _, x := range t.Aliases {
 		infos[x] = t
 	}
+	mu.Unlock()
+}
+
+// RemoveAllInfos clears up some RAM after we've got what we needed (our Commander)
+func RemoveAllInfos() {
+	mu.Lock()
+	infos = nil
 	mu.Unlock()
 }
 

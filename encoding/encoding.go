@@ -144,14 +144,14 @@ func Register() {
 	// It decodes directly to UTF-8 without change, as all ISO8859-1 values are legal UTF-8.
 	// Unicode values less than 256 (i.e. 8 bits) map 1:1 with 8859-1.
 	// It encodes runes outside of that to 0x1A, the ASCII substitution character.
-	ISO8859_1 := &CharMap{}
+	Iso88591 := &CharMap{}
 	// 8859-1 is the 8-bit identity map for Unicode.
-	ISO8859_1.Init()
+	Iso88591.Init()
 	// We supply latin1 and latin5, because Go doesn't
-	RegisterEncoding("ISO8859-1", ISO8859_1)
+	RegisterEncoding("ISO8859-1", Iso88591)
 
 	// ISO8859_9 represents the 8-bit ISO8859-9 scheme.
-	ISO8859_9 := &CharMap{Map: map[byte]rune{
+	Iso88599 := &CharMap{Map: map[byte]rune{
 		0xD0: 'Ğ',
 		0xDD: 'İ',
 		0xDE: 'Ş',
@@ -159,9 +159,9 @@ func Register() {
 		0xFD: 'ı',
 		0xFE: 'ş',
 	}}
-	ISO8859_9.Init()
+	Iso88599.Init()
 
-	RegisterEncoding("ISO8859-9", ISO8859_9)
+	RegisterEncoding("ISO8859-9", Iso88599)
 
 	RegisterEncoding("ISO8859-10", charmap.ISO8859_10)
 	RegisterEncoding("ISO8859-13", charmap.ISO8859_13)

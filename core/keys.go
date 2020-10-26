@@ -49,7 +49,7 @@ func defaultRunesFallback(c *core) {
 // To do this, we use the standard VT100 ACS maps.
 // This is only done if the terminal lacks support for Unicode; we always prefer to emit Unicode glyphs when we are able.
 func buildAlternateRunesMap(c *core) {
-	altChars := c.info.AltChars
+	altChars := c.comm.AltChars
 	c.altChars = make(map[rune]string)
 	for len(altChars) > 2 {
 		src := altChars[0]
@@ -97,7 +97,7 @@ func buildAlternateRunesMap(c *core) {
 			'}': enc.Sterling,
 			'~': enc.Bullet,
 		})[src]; ok {
-			c.altChars[r] = c.info.EnterAcs + dest + c.info.ExitAcs
+			c.altChars[r] = c.comm.EnterAcs + dest + c.comm.ExitAcs
 		}
 		altChars = altChars[2:]
 	}

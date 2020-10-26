@@ -84,7 +84,7 @@ func newContextReader(ctx context.Context, r io.Reader, keyChan, mouseChan chan 
 func (c *core) lifeCycle(ctx context.Context) {
 	// goroutine for listening inputs and distribute them to listeners
 	go func(cx context.Context) {
-		reader := newContextReader(cx, c.in, c.keyDispatcher.InChan(), c.mouseDispatcher.InChan(), len(c.info.Mouse) != 0)
+		reader := newContextReader(cx, c.in, c.keyDispatcher.InChan(), c.mouseDispatcher.InChan(), c.comm.HasMouse)
 		for {
 			// by default we just listen whatever comes
 			_, err := reader.Read(nil)
@@ -113,18 +113,18 @@ func (c *core) lifeCycle(ctx context.Context) {
 		defer c.Unlock()
 		// performing shutdown
 		c.resize(0, 0, true) // important : it will cancel pixels listener context
-		c.info.PutShowCursor(c.out)
-		c.info.PutAttrOff(c.out)
-		c.info.PutClear(c.out)
-		c.info.PutExitCA(c.out)
-		c.info.PutExitKeypad(c.out)
-		c.info.PutDisableMouse(c.out)
+		c.comm.PutShowCursor(c.out)
+		c.comm.PutAttrOff(c.out)
+		c.comm.PutClear(c.out)
+		c.comm.PutExitCA(c.out)
+		c.comm.PutExitKeypad(c.out)
+		c.comm.PutDisableMouse(c.out)
 		if err := c.internalShutdown(); err != nil {
 			if Debug {
 				log.Printf("[core] internal shutdown error : %v", err)
 			}
 		}
-		fmt.Println(c.info.Clear) // clears the terminal screen after shutdown
+		fmt.Println(c.comm.Clear) // clears the terminal screen after shutdown
 		if Debug {
 			log.Println("[core] shutdown complete")
 		}
@@ -145,9 +145,9 @@ func (c *core) lifeCycle(ctx context.Context) {
 				return
 			case enable := <-c.mouseSwitch:
 				if enable {
-					c.info.PutEnableMouse(c.out)
+					c.comm.PutEnableMouse(c.out)
 				} else {
-					c.info.PutDisableMouse(c.out)
+					c.comm.PutDisableMouse(c.out)
 				}
 			case <-c.winSizeCh:
 				c.Lock()
@@ -157,7 +157,7 @@ func (c *core) lifeCycle(ctx context.Context) {
 						log.Printf("error in win size reader : %v", err)
 					}
 				}
-				c.resize(w, h, false)              // store resize info
+				c.resize(w, h, false)              // store resize comm
 				ev := &EventResize{size: c.size}   // create one event for everyone
 				for _, cons := range c.receivers { // multiplexing
 					cons <- ev // Important note : yes, there is the risk of writing to close channels

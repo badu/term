@@ -117,7 +117,7 @@ func (c *core) readWinSize() (int, int, error) {
 				return -1, -1, err
 			}
 		} else {
-			cols = c.info.Columns
+			cols = c.comm.Columns
 		}
 	}
 	if rows == 0 {
@@ -126,7 +126,7 @@ func (c *core) readWinSize() (int, int, error) {
 				return -1, -1, err
 			}
 		} else {
-			rows = c.info.Lines
+			rows = c.comm.Lines
 		}
 	}
 	return cols, rows, nil

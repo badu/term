@@ -79,12 +79,12 @@ func WithIsIntensiveDraw(isIt bool) Option {
 	}
 }
 
-// core represents a screen backed by a info implementation.
+// core represents a screen backed by a comm implementation.
 type core struct {
 	sync.Mutex                               // guards other properties
 	sync.Once                                // required for registering lifecycle goroutines exactly once
 	size               *term.Size            //
-	info               *info.Term            // terminal info
+	comm               *info.Commander       // terminal Commander
 	termIOSPrv         *termiosPrivate       // required by internalStart
 	in                 *os.File              // input, acquired in internalStart, released in internalShutdown
 	out                *os.File              // output, acquired in internalStart, released in internalShutdown, used for displaying
@@ -106,14 +106,14 @@ type core struct {
 	pixCancel          func()       // allows cancellation of listening to pixels changes
 	hasTrueColor       bool         // as the name says
 	useDrawBuffering   bool         // true if we are collecting writes to buf instead of sending directly to out
-	canSetRGB          bool         // true if len(info.Term.SetFgRGB) > 0
-	canSetBgFg         bool         // true if len(info.Term.SetFgBg) > 0
-	canSetFg           bool         // true if len(info.Term.SetFg) > 0
-	canSetBg           bool         // true if len(info.Term.SetBg) > 0
+	canSetRGB          bool         // true if len(comm.Term.SetFgRGB) > 0
+	canSetBgFg         bool         // true if len(comm.Term.SetFgBg) > 0
+	canSetFg           bool         // true if len(comm.Term.SetFg) > 0
+	canSetBg           bool         // true if len(comm.Term.SetBg) > 0
 	isIntensiveDraw    bool
 }
 
-// NewCore returns a Engine that uses the stock TTY interface and POSIX termios, combined with a info description taken from the $TERM environment variable.
+// NewCore returns a Engine that uses the stock TTY interface and POSIX termios, combined with a comm description taken from the $TERM environment variable.
 // It returns an error if the terminal is not supported for any reason.
 // For terminals that do not support dynamic resize events, the $LINES $COLUMNS environment variables can be set to the actual window size, otherwise defaults taken from the terminal database are used.
 func NewCore(termEnv string, options ...Option) (term.Engine, error) {
@@ -123,7 +123,6 @@ func NewCore(termEnv string, options ...Option) (term.Engine, error) {
 		if err != nil {
 			return nil, err
 		}
-		info.AddTerminfo(ti)
 	}
 
 	hasTrueColor := false
@@ -132,7 +131,7 @@ func NewCore(termEnv string, options ...Option) (term.Engine, error) {
 	}
 
 	res := &core{
-		info:               ti,                                     // terminal info
+		comm:               info.NewCommander(ti),                  // terminal comm
 		died:               make(chan struct{}),                    // init of died channel, a buffered channel of exactly one
 		mouseSwitch:        make(chan bool, 1),                     // listens incoming requests from mouse
 		receivers:          make(channels, 0),                      // init the receivers slice of channels which will register themselves for resizing events
@@ -146,6 +145,8 @@ func NewCore(termEnv string, options ...Option) (term.Engine, error) {
 		canSetFg:           len(ti.SetFg) > 0,
 		cachedEncodedRunes: make(map[rune][]byte),
 	}
+
+	info.RemoveAllInfos() // Commander was built, delete info map to free some RAM
 
 	if e := enc.GetEncoding(res.charset); e != nil {
 		res.encoder = e.NewEncoder()
@@ -199,23 +200,21 @@ func (c *core) Start(ctx context.Context) error {
 			return
 		}
 
-		c.info.Init(c.out, c.size)
-
 		c.lifeCycle(ctx) // mounting context cancel listener
 		c.keyDispatcher.LifeCycle(ctx)
-		if len(c.info.Mouse) > 0 { // if we have mouse support
-			c.mouseDispatcher.LifeCycle(ctx, c.out)
+		if c.comm.HasMouse { // if we have mouse support
+			c.mouseDispatcher.LifeCycle(ctx)
 			c.mouseDispatcher.Enable()
 		}
 		if Debug {
 			log.Println("[START] multiplexer mounted.")
 		}
 
-		c.info.PutEnterCA(c.out)
-		c.info.PutHideCursor(c.out)
-		c.info.GoTo(c.out, c.size.Width, c.size.Height) // put cursor outside screen
-		c.info.PutEnableAcs(c.out)
-		c.info.PutClear(c.out)
+		c.comm.PutEnterCA(c.out)
+		c.comm.PutHideCursor(c.out)
+		c.comm.GoTo(c.out, c.size.Width, c.size.Height) // put cursor outside screen
+		c.comm.PutEnableAcs(c.out)
+		c.comm.PutClear(c.out)
 
 		ev := &EventResize{size: c.size}   // create one event for everyone
 		for _, cons := range c.receivers { // dispatch initial resize event, to inform listeners about width and height
@@ -318,7 +317,7 @@ func (c *core) NumColors() int {
 	if c.hasTrueColor {
 		return 1 << 24
 	}
-	return c.info.Colors
+	return c.comm.Colors
 }
 
 type encodeRuneFunc func(r rune, buf []byte) []byte
@@ -453,16 +452,16 @@ func (c *core) ShowCursor(where *image.Point) {
 
 	if where.X < 0 || where.Y < 0 || where.X >= c.size.Width || where.Y >= c.size.Height {
 		// does not update cursor position
-		if len(c.info.HideCursor) > 0 {
-			c.info.PutHideCursor(c.out)
+		if c.comm.HasHideCursor {
+			c.comm.PutHideCursor(c.out)
 		}
 		// No way to hide cursor, stick it at bottom right of screen
-		c.info.GoTo(c.out, c.size.Width, c.size.Height) // Y is column, X is row
+		c.comm.GoTo(c.out, c.size.Width, c.size.Height) // Y is column, X is row
 		return
 	}
 	c.cursorPosition = where
-	c.info.GoTo(c.out, c.cursorPosition.Y, c.cursorPosition.X) // Y is column, X is row
-	c.info.PutShowCursor(c.out)
+	c.comm.GoTo(c.out, c.cursorPosition.Y, c.cursorPosition.X) // Y is column, X is row
+	c.comm.PutShowCursor(c.out)
 }
 
 // HideCursor hides the cursor from the screen
@@ -472,18 +471,18 @@ func (c *core) HideCursor() {
 
 	c.cursorPosition = nil
 	// does not update cursor position
-	if len(c.info.HideCursor) > 0 {
-		c.info.PutHideCursor(c.out)
+	if c.comm.HasHideCursor {
+		c.comm.PutHideCursor(c.out)
 	}
 	// No way to hide cursor, stick it at bottom right of screen
-	c.info.GoTo(c.out, c.size.Width, c.size.Height) // Y is column, X is row
+	c.comm.GoTo(c.out, c.size.Width, c.size.Height) // Y is column, X is row
 }
 
 // Clear
 func (c *core) Clear() {
 	c.Lock()
 	defer c.Unlock()
-	c.info.PutClear(c.out)
+	c.comm.PutClear(c.out)
 }
 
 // Style
@@ -515,39 +514,39 @@ func (c *core) drawPixels(pixels ...term.PixelGetter) {
 	cachedAttrs := style.None
 
 	for _, pixel := range pixels {
-		c.info.GoTo(w, pixel.Position().Y, pixel.Position().X)       // first we go to that pixel : Y is column, X is row
+		c.comm.GoTo(w, pixel.Position().Y, pixel.Position().X)       // first we go to that pixel : Y is column, X is row
 		fg, bg, attrs := pixel.FgCol(), pixel.BgCol(), pixel.Attrs() // read pixel colors and attributes
 		if fg == cachedFG && bg == cachedBG && cachedAttrs == attrs {
 			goto cachedStyle // if the previous pixel had the same attributes and colors, we jump to displaying runes
 		}
 
-		if c.info.Colors > 0 {
-			c.info.PutAttrOff(w) // about to send colors
+		if c.comm.Colors > 0 {
+			c.comm.PutAttrOff(w) // about to send colors
 
 			if fg == color.Reset || bg == color.Reset {
-				c.info.PutResetFgBg(w)
+				c.comm.PutResetFgBg(w)
 			}
 
 			if c.hasTrueColor && c.canSetRGB { // we can use SetFgRGB
 				if fg.IsRGB() && bg.IsRGB() { // both are RGB
-					c.info.WriteBothColors(w, fg, bg, false)
+					c.comm.WriteBothColors(w, fg, bg, false)
 					goto colorDone
 				}
 
 				// not both are RGB
 				if fg.IsRGB() {
-					c.info.WriteColor(w, fg, true, false)
+					c.comm.WriteColor(w, fg, true, false)
 					fg = color.Default //  resets cache
 				}
 
 				if bg.IsRGB() {
-					c.info.WriteColor(w, bg, false, false)
+					c.comm.WriteColor(w, bg, false, false)
 					bg = color.Default // resets cache
 				}
 			}
 
 			if fg.Valid() {
-				fg = c.style.FindColor(fg) // attempt to find the color from info.Term colors
+				fg = c.style.FindColor(fg) // attempt to find the color from comm.Term colors
 			}
 
 			if bg.Valid() {
@@ -555,41 +554,41 @@ func (c *core) drawPixels(pixels ...term.PixelGetter) {
 			}
 
 			if fg.Valid() && bg.Valid() && c.canSetBgFg {
-				c.info.WriteBothColors(w, fg, bg, true)
+				c.comm.WriteBothColors(w, fg, bg, true)
 				goto colorDone
 			}
 
 			if fg.Valid() && c.canSetFg {
-				c.info.WriteColor(w, fg, true, true)
+				c.comm.WriteColor(w, fg, true, true)
 			}
 
 			if bg.Valid() && c.canSetBg {
-				c.info.WriteColor(w, bg, false, true)
+				c.comm.WriteColor(w, bg, false, true)
 			}
 		}
 
 	colorDone:
 
 		if attrs&style.Bold != 0 {
-			c.info.PutBold(w)
+			c.comm.PutBold(w)
 		}
 		if attrs&style.Underline != 0 {
-			c.info.PutUnderline(w)
+			c.comm.PutUnderline(w)
 		}
 		if attrs&style.Reverse != 0 {
-			c.info.PutReverse(w)
+			c.comm.PutReverse(w)
 		}
 		if attrs&style.Blink != 0 {
-			c.info.PutBlink(w)
+			c.comm.PutBlink(w)
 		}
 		if attrs&style.Dim != 0 {
-			c.info.PutDim(w)
+			c.comm.PutDim(w)
 		}
 		if attrs&style.Italic != 0 {
-			c.info.PutItalic(w)
+			c.comm.PutItalic(w)
 		}
 		if attrs&style.StrikeThrough != 0 {
-			c.info.PutStrikeThrough(w)
+			c.comm.PutStrikeThrough(w)
 		}
 
 		// cache for speeding up display same pixels (like a bunch of black background with white text)
@@ -637,16 +636,16 @@ func (c *core) drawPixels(pixels ...term.PixelGetter) {
 	}
 
 	if c.cursorPosition == nil { // check if we were displaying cursor
-		if len(c.info.HideCursor) > 0 {
-			c.info.PutHideCursor(c.out)
+		if c.comm.HasHideCursor {
+			c.comm.PutHideCursor(c.out)
 		}
 		// There is no way to hide cursor, put it at bottom right of screen
-		c.info.GoTo(c.out, c.size.Width, c.size.Height) // Y is column, X is row
+		c.comm.GoTo(c.out, c.size.Width, c.size.Height) // Y is column, X is row
 		return
 	}
 	// ok, we had a cursor before : restore cursor position
-	c.info.GoTo(c.out, c.cursorPosition.Y, c.cursorPosition.X) // Y is column, X is row
-	c.info.PutShowCursor(c.out)
+	c.comm.GoTo(c.out, c.cursorPosition.Y, c.cursorPosition.X) // Y is column, X is row
+	c.comm.PutShowCursor(c.out)
 }
 
 // drawPixel - locked inside caller function
@@ -654,35 +653,35 @@ func (c *core) drawPixels(pixels ...term.PixelGetter) {
 // TODO : find even a faster way (e.g. prepare the out then write it all at once, pprof this for allocations)
 func (c *core) drawPixel(column, row int, fg, bg color.Color, attrs style.Mask, encodedRune []byte) {
 
-	c.info.GoTo(c.out, column, row) // first we go to that pixel : Y is column, X is row
+	c.comm.GoTo(c.out, column, row) // first we go to that pixel : Y is column, X is row
 
-	if c.info.Colors > 0 {
-		c.info.PutAttrOff(c.out) // about to send colors
+	if c.comm.Colors > 0 {
+		c.comm.PutAttrOff(c.out) // about to send colors
 
 		if fg == color.Reset || bg == color.Reset {
-			c.info.PutResetFgBg(c.out)
+			c.comm.PutResetFgBg(c.out)
 		}
 
 		if c.hasTrueColor && c.canSetRGB { // we can use SetFgRGB
 			if fg.IsRGB() && bg.IsRGB() { // both are RGB
-				c.info.WriteBothColors(c.out, fg, bg, false)
+				c.comm.WriteBothColors(c.out, fg, bg, false)
 				goto colorDone
 			}
 
 			// not both are RGB
 			if fg.IsRGB() {
-				c.info.WriteColor(c.out, fg, true, false)
+				c.comm.WriteColor(c.out, fg, true, false)
 				fg = color.Default //  resets cache
 			}
 
 			if bg.IsRGB() {
-				c.info.WriteColor(c.out, bg, false, false)
+				c.comm.WriteColor(c.out, bg, false, false)
 				bg = color.Default // resets cache
 			}
 		}
 
 		if fg.Valid() {
-			fg = c.style.FindColor(fg) // attempt to find the color from info.Term colors
+			fg = c.style.FindColor(fg) // attempt to find the color from comm.Term colors
 		}
 
 		if bg.Valid() {
@@ -690,41 +689,41 @@ func (c *core) drawPixel(column, row int, fg, bg color.Color, attrs style.Mask, 
 		}
 
 		if fg.Valid() && bg.Valid() && c.canSetBgFg {
-			c.info.WriteBothColors(c.out, fg, bg, true)
+			c.comm.WriteBothColors(c.out, fg, bg, true)
 			goto colorDone
 		}
 
 		if fg.Valid() && c.canSetFg {
-			c.info.WriteColor(c.out, fg, true, true)
+			c.comm.WriteColor(c.out, fg, true, true)
 		}
 
 		if bg.Valid() && c.canSetBg {
-			c.info.WriteColor(c.out, bg, false, true)
+			c.comm.WriteColor(c.out, bg, false, true)
 		}
 	}
 
 colorDone:
 
 	if attrs&style.Bold != 0 {
-		c.info.PutBold(c.out)
+		c.comm.PutBold(c.out)
 	}
 	if attrs&style.Underline != 0 {
-		c.info.PutUnderline(c.out)
+		c.comm.PutUnderline(c.out)
 	}
 	if attrs&style.Reverse != 0 {
-		c.info.PutReverse(c.out)
+		c.comm.PutReverse(c.out)
 	}
 	if attrs&style.Blink != 0 {
-		c.info.PutBlink(c.out)
+		c.comm.PutBlink(c.out)
 	}
 	if attrs&style.Dim != 0 {
-		c.info.PutDim(c.out)
+		c.comm.PutDim(c.out)
 	}
 	if attrs&style.Italic != 0 {
-		c.info.PutItalic(c.out)
+		c.comm.PutItalic(c.out)
 	}
 	if attrs&style.StrikeThrough != 0 {
-		c.info.PutStrikeThrough(c.out)
+		c.comm.PutStrikeThrough(c.out)
 	}
 
 	if _, err := c.out.Write(encodedRune); err != nil {
