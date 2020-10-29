@@ -9,10 +9,6 @@ import (
 	"os"
 	"runtime"
 	"sync"
-	"unicode/utf8"
-
-	"golang.org/x/text/encoding"
-	"golang.org/x/text/transform"
 
 	"github.com/badu/term"
 	"github.com/badu/term/color"
@@ -56,9 +52,17 @@ func WithWinSizeBufferedChannelSize(size int) Option {
 // WithRunesFallback is a functional option to set a different runes fallback equivalence. See defaultRunesFallback for current defaults.
 func WithRunesFallback(fallback map[rune]string) Option {
 	return func(c *core) {
-		c.fallback = make(map[rune]string)
+		if c.encoder == nil {
+			if Debug {
+				log.Printf("[core] encoder is NIL : should not happen!")
+			}
+			return
+		}
+		c.encoder.Lock()
+		defer c.encoder.Unlock()
+		c.encoder.fallback = make(map[rune]string)
 		for k, v := range fallback {
-			c.fallback[k] = v
+			c.encoder.fallback[k] = v
 		}
 	}
 }
@@ -70,46 +74,37 @@ func WithTrueColor(trueColor string) Option {
 	}
 }
 
-// WithIsIntensiveDraw uses second draw method instead of the normal one (which hides cursor)
-func WithIsIntensiveDraw(isIt bool) Option {
-	return func(l *core) {
-		l.isIntensiveDraw = isIt
-	}
-}
-
 // core represents a screen backed by a comm implementation.
 type core struct {
-	sync.Mutex                               // guards other properties
-	sync.Once                                // required for registering lifecycle goroutines exactly once
-	size               *term.Size            //
-	comm               *info.Commander       // terminal Commander
-	termIOSPrv         *termiosPrivate       // required by internalStart
-	in                 *os.File              // input, acquired in internalStart, released in internalShutdown
-	out                *os.File              // output, acquired in internalStart, released in internalShutdown, used for displaying
-	died               chan struct{}         // this is a buffered channel of size one
-	winSizeCh          chan os.Signal        // listens for resize signals and transforms them into resize events in the dispatcher section
-	mouseSwitch        chan bool             // listens for mouse enable/disable requests
-	receivers          channels              // We need a slice of channels, on which our listeners will receive those events
-	finalizer          Finalizer             // Yes, we have callback and we could reuse it, but we will affect readability doing so
-	mouseDispatcher    term.MouseDispatcher  // mouse event dispatcher, exposes via term.Engine interface
-	keyDispatcher      term.KeyDispatcher    // key event dispatcher, exposes via term.Engine interface
-	encoder            transform.Transformer // used for encoding runes
-	charset            string                // stores charset for getter
-	fallback           map[rune]string       // runes fallback
-	altChars           map[rune]string       // alternative runes
-	cachedEncodedRunes map[rune][]byte       // cached encoded runes
-	buf                bytes.Buffer          // buffer, works in conjunction with useDrawBuffering (might be removed, due to the nature of pixels)
-	style              term.Style
-	cursorPosition     *term.Position // the position of the cursor, if visible
-	maximumPosition    *term.Position // the position of the cursor, outside the screen
-	pixCancel          func()         // allows cancellation of listening to pixels changes
-	hasTrueColor       bool           // as the name says
-	useDrawBuffering   bool           // true if we are collecting writes to buf instead of sending directly to out
-	canSetRGB          bool           // true if len(comm.Term.SetFgRGB) > 0
-	canSetBgFg         bool           // true if len(comm.Term.SetFgBg) > 0
-	canSetFg           bool           // true if len(comm.Term.SetFg) > 0
-	canSetBg           bool           // true if len(comm.Term.SetBg) > 0
-	isIntensiveDraw    bool
+	sync.Mutex                            // guards other properties
+	sync.Once                             // required for registering lifecycle goroutines exactly once
+	size             *term.Size           //
+	comm             *info.Commander      // terminal Commander
+	termIOSPrv       *termiosPrivate      // required by internalStart
+	in               *os.File             // input, acquired in internalStart, released in internalShutdown
+	out              *os.File             // output, acquired in internalStart, released in internalShutdown, used for displaying
+	died             chan struct{}        // this is a buffered channel of size one
+	winSizeCh        chan os.Signal       // listens for resize signals and transforms them into resize events in the dispatcher section
+	mouseSwitch      chan bool            // listens for mouse enable/disable requests
+	receivers        channels             // We need a slice of channels, on which our listeners will receive those events
+	finalizer        Finalizer            // Yes, we have callback and we could reuse it, but we will affect readability doing so
+	mouseDispatcher  term.MouseDispatcher // mouse event dispatcher, exposes via term.Engine interface
+	keyDispatcher    term.KeyDispatcher   // key event dispatcher, exposes via term.Engine interface
+	encoder          *encoder             // used for encoding runes
+	charset          string               // stores charset for getter
+	style            term.Style           //
+	cursorPosition   *term.Position       // the position of the cursor, if visible
+	maximumPosition  *term.Position       // the position of the cursor, outside the screen
+	pixCancel        func()               // allows cancellation of listening to pixels changes
+	cachedBG         color.Color          //
+	cachedFG         color.Color          //
+	cachedAttrs      style.Mask           //
+	hasTrueColor     bool                 // as the name says
+	useDrawBuffering bool                 // true if we are collecting writes to buf instead of sending directly to out
+	canSetRGB        bool                 // true if len(comm.Term.SetFgRGB) > 0
+	canSetBgFg       bool                 // true if len(comm.Term.SetFgBg) > 0
+	canSetFg         bool                 // true if len(comm.Term.SetFg) > 0
+	canSetBg         bool                 // true if len(comm.Term.SetBg) > 0
 }
 
 // NewCore returns a Engine that uses the stock TTY interface and POSIX termios, combined with a comm description taken from the $TERM environment variable.
@@ -130,43 +125,43 @@ func NewCore(termEnv string, options ...Option) (term.Engine, error) {
 	}
 
 	res := &core{
-		comm:               info.NewCommander(ti),                  // terminal comm
-		died:               make(chan struct{}),                    // init of died channel, a buffered channel of exactly one
-		mouseSwitch:        make(chan bool, 1),                     // listens incoming requests from mouse
-		receivers:          make(channels, 0),                      // init the receivers slice of channels which will register themselves for resizing events
-		winSizeCh:          make(chan os.Signal, runtime.NumCPU()), // listening resize events (OS specific)
-		style:              style.NewTermStyle(ti.Colors),
-		charset:            getCharset(),
-		hasTrueColor:       hasTrueColor,
-		canSetRGB:          len(ti.SetFgRGB) > 0,
-		canSetBgFg:         len(ti.SetFgBg) > 0,
-		canSetBg:           len(ti.SetBg) > 0,
-		canSetFg:           len(ti.SetFg) > 0,
-		cachedEncodedRunes: make(map[rune][]byte),
+		comm:         info.NewCommander(ti),                  // terminal comm
+		died:         make(chan struct{}),                    // init of died channel, a buffered channel of exactly one
+		mouseSwitch:  make(chan bool, 1),                     // listens incoming requests from mouse
+		receivers:    make(channels, 0),                      // init the receivers slice of channels which will register themselves for resizing events
+		winSizeCh:    make(chan os.Signal, runtime.NumCPU()), // listening resize events (OS specific)
+		style:        style.NewTermStyle(ti.Colors),
+		charset:      getCharset(),
+		hasTrueColor: hasTrueColor,
+		canSetRGB:    len(ti.SetFgRGB) > 0,
+		canSetBgFg:   len(ti.SetFgBg) > 0,
+		canSetBg:     len(ti.SetBg) > 0,
+		canSetFg:     len(ti.SetFg) > 0,
+		cachedBG:     color.Default,
+		cachedFG:     color.Default,
+		cachedAttrs:  style.None,
 	}
 
 	info.RemoveAllInfos() // Commander was built, delete info map to free some RAM
 
 	if e := enc.GetEncoding(res.charset); e != nil {
-		res.encoder = e.NewEncoder()
+		res.encoder = newEncoder(e.NewEncoder())
+		res.encoder.buildAlternateRunesMap(res.comm.AltChars, res.comm.EnterAcs, res.comm.ExitAcs)
+		res.encoder.defaultRunesFallback()
 	} else {
 		return nil, ErrNoCharset
 	}
-
-	buildAlternateRunesMap(res)
-	defaultRunesFallback(res)
 
 	for _, o := range options {
 		o(res)
 	}
 
-	finalizer := func() {
-		if Debug {
-			log.Println("[core] : component died")
-		}
-	}
 	// creating dispatchers for key and mouse
-	res.mouseDispatcher, err = mouse.NewEventDispatcher(mouse.WithTerminalInfo(ti), mouse.WithResizeDispatcher(res), mouse.WithFinalizer(finalizer), mouse.WithSwitchChannel(res.mouseSwitch))
+	res.mouseDispatcher, err = mouse.NewEventDispatcher(
+		mouse.WithTerminalInfo(ti),
+		mouse.WithResizeDispatcher(res),
+		mouse.WithSwitchChannel(res.mouseSwitch),
+	)
 	if err != nil {
 		if Debug {
 			log.Printf("error creating mouse dispatcher : %v", err)
@@ -174,7 +169,7 @@ func NewCore(termEnv string, options ...Option) (term.Engine, error) {
 		return nil, err
 	}
 
-	res.keyDispatcher, err = key.NewEventDispatcher(key.WithTerminalInfo(ti), key.WithFinalizer(finalizer))
+	res.keyDispatcher, err = key.NewEventDispatcher(key.WithTerminalInfo(ti))
 	if err != nil {
 		if Debug {
 			log.Printf("error creating key dispatcher : %v", err)
@@ -249,31 +244,7 @@ func (c *core) MouseDispatcher() term.MouseDispatcher {
 
 // CanDisplay - checks if a rune can be displayed, implementation of term.Engine interface
 func (c *core) CanDisplay(r rune, checkFallbacks bool) bool {
-	c.Lock()
-	defer c.Unlock()
-
-	if enco := c.encoder; enco != nil {
-		nb := make([]byte, 6)
-		ob := make([]byte, 6)
-		num := utf8.EncodeRune(ob, r)
-
-		enco.Reset()
-		dst, _, err := enco.Transform(nb, ob[:num], true)
-		if dst != 0 && err == nil && nb[0] != '\x1A' {
-			return true
-		}
-	}
-	// Terminal fallbacks always permitted, since we assume they are basically nearly perfect renditions.
-	if _, ok := c.altChars[r]; ok {
-		return true
-	}
-	if !checkFallbacks {
-		return false
-	}
-	if _, ok := c.fallback[r]; ok {
-		return true
-	}
-	return false
+	return c.encoder.canDisplay(r, checkFallbacks)
 }
 
 // CharacterSet exposes current charset, implementation for term.Engine interface
@@ -286,18 +257,12 @@ func (c *core) CharacterSet() string {
 
 // SetRuneFallback replaces a rune with a fallback
 func (c *core) SetRuneFallback(orig rune, fallback string) {
-	c.Lock()
-	defer c.Unlock()
-
-	c.fallback[orig] = fallback
+	c.encoder.setRuneFallback(orig, fallback)
 }
 
 // UnsetRuneFallback forgets a replaced rune fallback
 func (c *core) UnsetRuneFallback(orig rune) {
-	c.Lock()
-	defer c.Unlock()
-
-	delete(c.fallback, orig)
+	c.encoder.unsetRuneFallback(orig)
 }
 
 // Size returns the current size of the terminal window
@@ -317,44 +282,6 @@ func (c *core) NumColors() int {
 		return 1 << 24
 	}
 	return c.comm.Colors
-}
-
-type encodeRuneFunc func(r rune, buf []byte) []byte
-
-// encodeRune appends a buffer with encoded runes
-func (c *core) encodeRune(r rune, buf []byte) []byte {
-	if cache, ok := c.cachedEncodedRunes[r]; ok {
-		buf = append(buf, cache...)
-		return buf
-	}
-	nb := make([]byte, 6)
-	ob := make([]byte, 6)
-	num := utf8.EncodeRune(ob, r)
-	ob = ob[:num]
-	dst := 0
-	var err error
-	if enco := c.encoder; enco != nil {
-		enco.Reset()
-		dst, _, err = enco.Transform(nb, ob, true)
-	}
-	if err != nil || dst == 0 || nb[0] == encoding.ASCIISub {
-		// Combining characters are elided
-		if len(buf) == 0 {
-			if acs, ok := c.altChars[r]; ok {
-				buf = append(buf, []byte(acs)...)
-			} else if fb, ok := c.fallback[r]; ok {
-				buf = append(buf, []byte(fb)...)
-			} else {
-				buf = append(buf, '?')
-			}
-		}
-	} else {
-		buf = append(buf, nb[:dst]...)
-	}
-	cache := make([]byte, 6)
-	copy(cache, buf)
-	c.cachedEncodedRunes[r] = cache
-	return buf
 }
 
 // Out returns the output file
@@ -387,24 +314,18 @@ func (c *core) ActivePixels(pixels []term.PixelGetter) {
 
 	for _, pixel := range pixels {
 		// mount a goroutine for each pixel. The exit mechanism is a convention: a pixel that has -1,-1 coordinates
-		go func(pix term.PixelGetter, intensiveDraw bool) {
+		go func(pix term.PixelGetter) {
 			for msg := range pix.DrawCh() { // listen incoming messages over the pixel draw request channel
 				if msg.PositionHash() == term.MinusOneMinusOne { // check if this is the cancellation pixel, we're exiting the goroutine
 					return
 				}
 				go func(p term.PixelGetter) { // running in a separate goroutine, because it blocks reading new messages
 					c.Lock()
-					if c.isIntensiveDraw {
-						buf := make([]byte, 0, 6)
-						buf = c.encodeRune(p.Rune(), buf)
-						c.drawPixel(p.PositionHash(), p.BgCol(), p.FgCol(), p.Attrs(), buf)
-					} else {
-						c.drawPixels(p)
-					}
-					c.Unlock()
+					defer c.Unlock()
+					c.drawPixels(p)
 				}(msg)
 			}
-		}(pixel, c.isIntensiveDraw)
+		}(pixel)
 		// for each pixel, mounting a kill switch, which will write the shutdown message when the context is done
 		go func(pixCh chan term.PixelGetter, done <-chan struct{}, shutdownPix term.PixelGetter) {
 			<-done               // blocking wait for done
@@ -425,15 +346,14 @@ func (c *core) Redraw(cells []term.PixelGetter) {
 	defer c.Unlock()
 
 	c.useDrawBuffering = true // we use buffering, since we're redrawing everything
-	c.drawPixels(cells...)
+	buf := c.drawPixels(cells...)
 	c.useDrawBuffering = false // finished buffering
 
-	if _, err := c.buf.WriteTo(c.out); err != nil { // writing buffer content to out
+	if _, err := buf.WriteTo(c.out); err != nil { // writing buffer content to out
 		if Debug {
 			log.Printf("error writing to out : " + err.Error())
 		}
 	}
-	c.buf.Reset() // reset the buffer for the next time
 }
 
 // Cursor returns the current cursor position
@@ -504,21 +424,19 @@ func (c *core) resize(w, h int, shutdown bool) {
 }
 
 // drawPixels - locked inside caller function
-func (c *core) drawPixels(pixels ...term.PixelGetter) {
+func (c *core) drawPixels(pixels ...term.PixelGetter) bytes.Buffer {
 	var w io.Writer
+	var result bytes.Buffer
 	if c.useDrawBuffering {
-		w = &c.buf
+		w = &result
 	} else {
 		w = c.out
 	}
-	cachedBG := color.Default
-	cachedFG := color.Default
-	cachedAttrs := style.None
 
 	for _, pixel := range pixels {
 		c.comm.GoTo(w, pixel.PositionHash())                         // first we go to
 		fg, bg, attrs := pixel.FgCol(), pixel.BgCol(), pixel.Attrs() // read pixel colors and attributes
-		if fg == cachedFG && bg == cachedBG && cachedAttrs == attrs {
+		if fg == c.cachedFG && bg == c.cachedBG && c.cachedAttrs == attrs {
 			goto cachedStyle // if the previous pixel had the same attributes and colors, we jump to displaying runes
 		}
 
@@ -594,18 +512,18 @@ func (c *core) drawPixels(pixels ...term.PixelGetter) {
 		}
 
 		// cache for speeding up display same pixels (like a bunch of black background with white text)
-		cachedAttrs = attrs
-		cachedBG = bg
-		cachedFG = fg
+		c.cachedAttrs = attrs
+		c.cachedBG = bg
+		c.cachedFG = fg
 
 	cachedStyle:
 
 		buf := make([]byte, 0, 6)
-		buf = c.encodeRune(pixel.Rune(), buf)
+		buf = c.encoder.encodeRune(pixel.Rune(), buf)
 		if pixel.HasUnicode() {
 			uni := pixel.Unicode()
 			for _, r := range *uni {
-				buf = c.encodeRune(r, buf)
+				buf = c.encoder.encodeRune(r, buf)
 			}
 		}
 
@@ -623,7 +541,7 @@ func (c *core) drawPixels(pixels ...term.PixelGetter) {
 		// }
 
 		if c.useDrawBuffering {
-			if _, err := c.buf.Write(buf); err != nil {
+			if _, err := result.Write(buf); err != nil {
 				if Debug {
 					log.Printf("error writing to io : " + err.Error())
 				}
@@ -643,94 +561,10 @@ func (c *core) drawPixels(pixels ...term.PixelGetter) {
 		}
 		// There is no way to hide cursor, put it at bottom right of screen
 		c.comm.GoTo(c.out, c.maximumPosition.Hash())
-		return
+		return result
 	}
 	// ok, we had a cursor before : restore cursor position
 	c.comm.GoTo(c.out, c.cursorPosition.Hash())
 	c.comm.PutShowCursor(c.out)
-}
-
-// drawPixel - locked inside caller function
-// same as drawPixels, but since it's called in goroutine, needed to be faster
-// TODO : find even a faster way (e.g. prepare the out then write it all at once, pprof this for allocations)
-func (c *core) drawPixel(posHash int, fg, bg color.Color, attrs style.Mask, encodedRune []byte) {
-
-	c.comm.GoTo(c.out, posHash) // first we go to
-
-	if c.comm.Colors > 0 {
-		c.comm.PutAttrOff(c.out) // about to send colors
-
-		if fg == color.Reset || bg == color.Reset {
-			c.comm.PutResetFgBg(c.out)
-		}
-
-		if c.hasTrueColor && c.canSetRGB { // we can use SetFgRGB
-			if color.IsRGB(fg) && color.IsRGB(bg) { // both are RGB
-				c.comm.WriteBothColors(c.out, fg, bg, false)
-				goto colorDone
-			}
-
-			// not both are RGB
-			if color.IsRGB(fg) {
-				c.comm.WriteColor(c.out, fg, true, false)
-				fg = color.Default //  resets cache
-			}
-
-			if color.IsRGB(bg) {
-				c.comm.WriteColor(c.out, bg, false, false)
-				bg = color.Default // resets cache
-			}
-		}
-
-		if color.Valid(fg) {
-			fg = c.style.FindColor(fg) // attempt to find the color from comm.Term colors
-		}
-
-		if color.Valid(bg) {
-			bg = c.style.FindColor(bg) // same as above
-		}
-
-		if color.Valid(fg) && color.Valid(bg) && c.canSetBgFg {
-			c.comm.WriteBothColors(c.out, fg, bg, true)
-			goto colorDone
-		}
-
-		if color.Valid(fg) && c.canSetFg {
-			c.comm.WriteColor(c.out, fg, true, true)
-		}
-
-		if color.Valid(bg) && c.canSetBg {
-			c.comm.WriteColor(c.out, bg, false, true)
-		}
-	}
-
-colorDone:
-
-	if attrs&style.Bold != 0 {
-		c.comm.PutBold(c.out)
-	}
-	if attrs&style.Underline != 0 {
-		c.comm.PutUnderline(c.out)
-	}
-	if attrs&style.Reverse != 0 {
-		c.comm.PutReverse(c.out)
-	}
-	if attrs&style.Blink != 0 {
-		c.comm.PutBlink(c.out)
-	}
-	if attrs&style.Dim != 0 {
-		c.comm.PutDim(c.out)
-	}
-	if attrs&style.Italic != 0 {
-		c.comm.PutItalic(c.out)
-	}
-	if attrs&style.StrikeThrough != 0 {
-		c.comm.PutStrikeThrough(c.out)
-	}
-
-	if _, err := c.out.Write(encodedRune); err != nil {
-		if Debug {
-			log.Printf("error writing to io : " + err.Error())
-		}
-	}
+	return result
 }

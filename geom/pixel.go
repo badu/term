@@ -58,7 +58,7 @@ func WithAttrs(m style.Mask) PixelOption {
 }
 
 type px struct {
-	pos           term.Position         // required, for each pixel. default to {-1,-1} and validated in the constructor, row is X, column is Y
+	pos           term.Position         // required, for each pixel. default to {-1,-1} and validated in the constructor
 	drawCh        chan term.PixelGetter // required, triggers core.drawPixel via setters
 	fgCol         color.Color           // optional, defaults to color.Default
 	bgCol         color.Color           // optional, defaults to color.Default
@@ -257,7 +257,7 @@ func (p *px) SetUnicode(u term.Unicode) {
 
 // NewPixel constructs a term.Pixel implementation, to be used as both term.Pixel and term.PixelSetter interfaces
 // Note : the reason for which we're using image.Point relies on the functionality it provides regarding image package, e.g : image.Point.In(r image.Rectangle)
-// Another note, important : the background and foreground needs to be defaulted to color.Default because engine performs extra steps otherwise. Search core.drawPixel method for `ref "needed" from geom.Pixel`
+// Another note, important : the background and foreground needs to be defaulted to color.Default because engine performs extra steps otherwise. Search core.drawPixel method for `positions "needed" from geom.Pixel`
 func NewPixel(opts ...PixelOption) (term.Pixel, error) {
 	// because composition components will "own" a set of pixels, it's not a good idea to to cache our GoTo []byte here
 	defPos := term.Position{Row: -1, Column: -1}

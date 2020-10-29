@@ -69,7 +69,7 @@ func (p *page) init() {
 		for row := 0; row < p.size.Height; row++ {
 			fg := geom.WithForeground(p.image[imageColumn][imageRow][0])
 			bg := geom.WithBackground(p.image[imageColumn][imageRow][1])
-			px, _ := geom.NewPixel(geom.WithRune('▀'), fg, bg, geom.WithPosition(term.NewPosition(column, row))) // row is X, column is Y
+			px, _ := geom.NewPixel(geom.WithRune('▀'), fg, bg, geom.WithPosition(term.NewPosition(column, row)))
 			getters = append(getters, px)
 			p.pixels[column][row] = px
 			imageRow++
@@ -246,7 +246,6 @@ func main() {
 		core.WithFinalizer(func() {
 			log.Println("[app] core finalizer called")
 		}),
-		core.WithIsIntensiveDraw(true),
 	)
 	if err != nil {
 		log.Printf("error : %v", err)

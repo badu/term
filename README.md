@@ -86,7 +86,7 @@ A `Pixel` is an interface which is known by both `Application` and `Engine`. The
 A `Pixel` constructor accepts the following functional options:
 * `WithBackground` - presets the background color.
 * `WithForeground` - presets the foreground (text) color.
-* `WithPoint` - is required, and sets the position of the pixel : row is X, column is Y.
+* `WithPoint` - is required, and sets the position of the pixel (column and row).
 * `WithRune` - presets the rune.
 * `WithUnicode` - presets the unicode (optional, for that reason it is a pointer).
 * `WithAttrs` - presets the `style.Mask` of the `Pixel`.

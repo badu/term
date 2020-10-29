@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"math"
 	"os"
 
 	"github.com/badu/term"
@@ -133,6 +134,7 @@ func (r *listener) lifeCycle(ctx context.Context, cancel func()) {
 	go func() {
 		white := style.NewStyle(style.WithFg(color.White), style.WithBg(color.Blue))
 		blue := style.NewStyle(style.WithFg(color.Blue))
+		rgb := style.NewStyle(style.WithBg(color.Red), style.WithFg(color.NewRGBAColor(0, 0, math.MaxUint32, math.MaxUint32)))
 		bstr := ""
 		mousePosition := "%03d,%03d"
 		buttonsInfo := "%10s"
@@ -149,7 +151,7 @@ func (r *listener) lifeCycle(ctx context.Context, cancel func()) {
 
 		r.init(size)
 		r.drawBox(1, 1, 42, 7, white, encoding.Space)
-		r.emitStr(2, 2, white, "Press ESC twice to exit, C to clear.")
+		r.emitStr(2, 2, rgb, "Press ESC twice to exit, C to clear.")
 		r.emitStr(2, 3, white, "Click and drag to draw a rectangle.")
 		const (
 			mouseStr   = "Mouse: "
@@ -244,6 +246,7 @@ func main() {
 		core.WithFinalizer(func() {
 			log.Println("[app] core finalizer called")
 		}),
+		//core.WithIsIntensiveDraw(true),
 	)
 	if err != nil {
 		log.Printf("[app] error : %v", err)

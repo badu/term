@@ -57,3 +57,11 @@ func Max(x, y int) int {
 	}
 	return y
 }
+
+// Abs returns the absolute value
+func Abs(a int) int {
+	if a <= 0 {
+		return -a
+	}
+	return a
+}
