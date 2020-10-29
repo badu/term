@@ -76,35 +76,34 @@ func WithTrueColor(trueColor string) Option {
 
 // core represents a screen backed by a comm implementation.
 type core struct {
-	sync.Mutex                            // guards other properties
-	sync.Once                             // required for registering lifecycle goroutines exactly once
-	size             *term.Size           //
-	comm             *info.Commander      // terminal Commander
-	termIOSPrv       *termiosPrivate      // required by internalStart
-	in               *os.File             // input, acquired in internalStart, released in internalShutdown
-	out              *os.File             // output, acquired in internalStart, released in internalShutdown, used for displaying
-	died             chan struct{}        // this is a buffered channel of size one
-	winSizeCh        chan os.Signal       // listens for resize signals and transforms them into resize events in the dispatcher section
-	mouseSwitch      chan bool            // listens for mouse enable/disable requests
-	receivers        channels             // We need a slice of channels, on which our listeners will receive those events
-	finalizer        Finalizer            // Yes, we have callback and we could reuse it, but we will affect readability doing so
-	mouseDispatcher  term.MouseDispatcher // mouse event dispatcher, exposes via term.Engine interface
-	keyDispatcher    term.KeyDispatcher   // key event dispatcher, exposes via term.Engine interface
-	encoder          *encoder             // used for encoding runes
-	charset          string               // stores charset for getter
-	style            term.Style           //
-	cursorPosition   *term.Position       // the position of the cursor, if visible
-	maximumPosition  *term.Position       // the position of the cursor, outside the screen
-	pixCancel        func()               // allows cancellation of listening to pixels changes
-	cachedBG         color.Color          //
-	cachedFG         color.Color          //
-	cachedAttrs      style.Mask           //
-	hasTrueColor     bool                 // as the name says
-	useDrawBuffering bool                 // true if we are collecting writes to buf instead of sending directly to out
-	canSetRGB        bool                 // true if len(comm.Term.SetFgRGB) > 0
-	canSetBgFg       bool                 // true if len(comm.Term.SetFgBg) > 0
-	canSetFg         bool                 // true if len(comm.Term.SetFg) > 0
-	canSetBg         bool                 // true if len(comm.Term.SetBg) > 0
+	sync.Mutex                           // guards other properties
+	sync.Once                            // required for registering lifecycle goroutines exactly once
+	size            *term.Size           //
+	comm            *info.Commander      // terminal Commander
+	termIOSPrv      *termiosPrivate      // required by internalStart
+	in              *os.File             // input, acquired in internalStart, released in internalShutdown
+	out             *os.File             // output, acquired in internalStart, released in internalShutdown, used for displaying
+	died            chan struct{}        // this is a buffered channel of size one
+	winSizeCh       chan os.Signal       // listens for resize signals and transforms them into resize events in the dispatcher section
+	mouseSwitch     chan bool            // listens for mouse enable/disable requests
+	receivers       channels             // We need a slice of channels, on which our listeners will receive those events
+	finalizer       Finalizer            // Yes, we have callback and we could reuse it, but we will affect readability doing so
+	mouseDispatcher term.MouseDispatcher // mouse event dispatcher, exposes via term.Engine interface
+	keyDispatcher   term.KeyDispatcher   // key event dispatcher, exposes via term.Engine interface
+	encoder         *encoder             // used for encoding runes
+	charset         string               // stores charset for getter
+	style           term.Style           //
+	cursorPosition  *term.Position       // the position of the cursor, if visible
+	maximumPosition *term.Position       // the position of the cursor, outside the screen
+	pixCancel       func()               // allows cancellation of listening to pixels changes
+	cachedBG        color.Color          //
+	cachedFG        color.Color          //
+	cachedAttrs     style.Mask           //
+	hasTrueColor    bool                 // as the name says
+	canSetRGB       bool                 // true if len(comm.Term.SetFgRGB) > 0
+	canSetBgFg      bool                 // true if len(comm.Term.SetFgBg) > 0
+	canSetFg        bool                 // true if len(comm.Term.SetFg) > 0
+	canSetBg        bool                 // true if len(comm.Term.SetBg) > 0
 }
 
 // NewCore returns a Engine that uses the stock TTY interface and POSIX termios, combined with a comm description taken from the $TERM environment variable.
@@ -314,18 +313,18 @@ func (c *core) ActivePixels(pixels []term.PixelGetter) {
 
 	for _, pixel := range pixels {
 		// mount a goroutine for each pixel. The exit mechanism is a convention: a pixel that has -1,-1 coordinates
-		go func(pix term.PixelGetter) {
+		go func(out *os.File, pix term.PixelGetter) {
 			for msg := range pix.DrawCh() { // listen incoming messages over the pixel draw request channel
 				if msg.PositionHash() == term.MinusOneMinusOne { // check if this is the cancellation pixel, we're exiting the goroutine
 					return
 				}
-				go func(p term.PixelGetter) { // running in a separate goroutine, because it blocks reading new messages
+				go func(o *os.File, p term.PixelGetter) { // running in a separate goroutine, because it blocks reading new messages
 					c.Lock()
 					defer c.Unlock()
-					c.drawPixels(p)
-				}(msg)
+					c.drawPixels(o, p)
+				}(out, msg)
 			}
-		}(pixel)
+		}(c.out, pixel)
 		// for each pixel, mounting a kill switch, which will write the shutdown message when the context is done
 		go func(pixCh chan term.PixelGetter, done <-chan struct{}, shutdownPix term.PixelGetter) {
 			<-done               // blocking wait for done
@@ -344,10 +343,8 @@ func (c *core) ActivePixels(pixels []term.PixelGetter) {
 func (c *core) Redraw(cells []term.PixelGetter) {
 	c.Lock()
 	defer c.Unlock()
-
-	c.useDrawBuffering = true // we use buffering, since we're redrawing everything
-	buf := c.drawPixels(cells...)
-	c.useDrawBuffering = false // finished buffering
+	buf := bytes.NewBuffer(nil)
+	c.drawPixels(buf, cells...) // we use buffering, since we're redrawing everything
 
 	if _, err := buf.WriteTo(c.out); err != nil { // writing buffer content to out
 		if Debug {
@@ -373,6 +370,7 @@ func (c *core) ShowCursor(where *term.Position) {
 		// does not update cursor position
 		if c.comm.HasHideCursor {
 			c.comm.PutHideCursor(c.out)
+			return
 		}
 		// No way to hide cursor, stick it at bottom right of screen
 		c.comm.GoTo(c.out, c.maximumPosition.Hash())
@@ -391,8 +389,11 @@ func (c *core) HideCursor() {
 	c.cursorPosition = nil
 	// does not update cursor position
 	if c.comm.HasHideCursor {
+		log.Println("has hide cursor")
 		c.comm.PutHideCursor(c.out)
+		return
 	}
+	log.Println("cannot hide cursor : moving it outside of screen")
 	// No way to hide cursor, stick it at bottom right of screen
 	c.comm.GoTo(c.out, c.maximumPosition.Hash())
 }
@@ -424,15 +425,7 @@ func (c *core) resize(w, h int, shutdown bool) {
 }
 
 // drawPixels - locked inside caller function
-func (c *core) drawPixels(pixels ...term.PixelGetter) bytes.Buffer {
-	var w io.Writer
-	var result bytes.Buffer
-	if c.useDrawBuffering {
-		w = &result
-	} else {
-		w = c.out
-	}
-
+func (c *core) drawPixels(w io.Writer, pixels ...term.PixelGetter) {
 	for _, pixel := range pixels {
 		c.comm.GoTo(w, pixel.PositionHash())                         // first we go to
 		fg, bg, attrs := pixel.FgCol(), pixel.BgCol(), pixel.Attrs() // read pixel colors and attributes
@@ -518,17 +511,17 @@ func (c *core) drawPixels(pixels ...term.PixelGetter) bytes.Buffer {
 
 	cachedStyle:
 
-		buf := make([]byte, 0, 6)
-		buf = c.encoder.encodeRune(pixel.Rune(), buf)
+		runes := make([]byte, 0, 6)
+		runes = c.encoder.encodeRune(pixel.Rune(), runes)
 		if pixel.HasUnicode() {
 			uni := pixel.Unicode()
 			for _, r := range *uni {
-				buf = c.encoder.encodeRune(r, buf)
+				runes = c.encoder.encodeRune(r, runes)
 			}
 		}
 
 		// TODO : implement width checking for too wide to fit or chars not being able to display
-		// str := string(buf)
+		// str := string(runes)
 		// if pixel.Width() > 1 && str == "?" {
 		// No FullWidth character support
 		// str = "? "
@@ -540,31 +533,10 @@ func (c *core) drawPixels(pixels ...term.PixelGetter) bytes.Buffer {
 		// str = " " // too wide to fit; emit a single space instead
 		// }
 
-		if c.useDrawBuffering {
-			if _, err := result.Write(buf); err != nil {
-				if Debug {
-					log.Printf("error writing to io : " + err.Error())
-				}
-			}
-		} else {
-			if _, err := c.out.Write(buf); err != nil {
-				if Debug {
-					log.Printf("error writing to io : " + err.Error())
-				}
+		if _, err := w.Write(runes); err != nil {
+			if Debug {
+				log.Printf("error writing to io : " + err.Error())
 			}
 		}
 	}
-
-	if c.cursorPosition == nil { // check if we were displaying cursor
-		if c.comm.HasHideCursor {
-			c.comm.PutHideCursor(c.out)
-		}
-		// There is no way to hide cursor, put it at bottom right of screen
-		c.comm.GoTo(c.out, c.maximumPosition.Hash())
-		return result
-	}
-	// ok, we had a cursor before : restore cursor position
-	c.comm.GoTo(c.out, c.cursorPosition.Hash())
-	c.comm.PutShowCursor(c.out)
-	return result
 }

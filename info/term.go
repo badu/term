@@ -291,44 +291,43 @@ type Term struct {
 
 type Commander struct {
 	*paramsBuffer
-	bGotos         *gotoCache
-	bColors        *colorCache
-	Colors         int // colors
-	Columns        int // cols
-	Lines          int // lines
-	svars          [26]string
-	bEnterCA       []byte
-	bHideCursor    []byte
-	bShowCursor    []byte
-	bEnableAcs     []byte
-	bClear         []byte
-	bAttrOff       []byte
-	bExitCA        []byte
-	bExitKeypad    []byte
-	bBold          []byte
-	bUnderline     []byte
-	bReverse       []byte
-	bBlink         []byte
-	bDim           []byte
-	bItalic        []byte
-	bStrikeThrough []byte
-	bResetFgBg     []byte
-	bEnableMouse   []byte
-	bDisableMouse  []byte
-	PadChar        string
-	SetFg          string // setaf
-	SetBg          string // setab
-	SetFgBg        string // setfgbg
-	SetFgBgRGB     string // setfgbgrgb
-	SetFgRGB       string // setfrgb
-	SetBgRGB       string // setbrgb
-	SetCursor      string // cup
-	EnterAcs       string // smacs
-	ExitAcs        string // rmacs
-	AltChars       string // acsc
-	Clear          string // clear
-	HasMouse       bool
-	HasHideCursor  bool
+	bGotos        *gotoCache
+	bColors       *colorCache
+	Colors        int // colors
+	Columns       int // cols
+	Lines         int // lines
+	svars         [26]string
+	PadChar       string
+	SetFg         string // setaf
+	SetBg         string // setab
+	SetFgBg       string // setfgbg
+	SetFgBgRGB    string // setfgbgrgb
+	SetFgRGB      string // setfrgb
+	SetBgRGB      string // setbrgb
+	SetCursor     string // cup
+	EnterAcs      string // smacs
+	ExitAcs       string // rmacs
+	AltChars      string // acsc
+	Clear         string // clear
+	HideCursor    string // civis
+	ShowCursor    string // cnorm
+	EnterCA       string
+	EnableAcs     string
+	AttrOff       string
+	ExitCA        string
+	ExitKeypad    string
+	Bold          string
+	Underline     string
+	Reverse       string
+	Blink         string
+	Dim           string
+	Italic        string
+	StrikeThrough string
+	ResetFgBg     string
+	EnableMouse   string
+	DisableMouse  string
+	HasMouse      bool
+	HasHideCursor bool
 }
 
 type colorCache struct {
@@ -651,18 +650,21 @@ func (t *Commander) WriteString(w io.Writer, s string) error {
 	for {
 		beg := strings.Index(s, "$<")
 		if beg < 0 {
+
 			// Most strings don't need padding!
 			if _, err := io.WriteString(w, s); err != nil {
 				return fmt.Errorf("could not write string : %v", err)
 			}
 			return nil
 		}
+
 		if _, err := io.WriteString(w, s[:beg]); err != nil {
 			return fmt.Errorf("could not write string : %v", err)
 		}
 		s = s[beg+2:]
 		end := strings.Index(s, ">")
 		if end < 0 {
+
 			// unterminated.. just emit bytes unadulterated
 			if _, err := io.WriteString(w, "$<"+s); err != nil {
 				return fmt.Errorf("could not write string : %v", err)
@@ -786,7 +788,7 @@ func (t *Commander) TColor(fi, bi int) string {
 }
 
 func (t *Commander) PutEnterCA(w io.Writer) {
-	if _, err := w.Write(t.bEnterCA); err != nil {
+	if err := t.WriteString(w, t.EnterCA); err != nil {
 		if Debug {
 			log.Printf("error writing to out : %v", err)
 		}
@@ -794,7 +796,7 @@ func (t *Commander) PutEnterCA(w io.Writer) {
 }
 
 func (t *Commander) PutHideCursor(w io.Writer) {
-	if _, err := w.Write(t.bHideCursor); err != nil {
+	if err := t.WriteString(w, t.HideCursor); err != nil {
 		if Debug {
 			log.Printf("error writing to out : %v", err)
 		}
@@ -802,7 +804,7 @@ func (t *Commander) PutHideCursor(w io.Writer) {
 }
 
 func (t *Commander) PutShowCursor(w io.Writer) {
-	if _, err := w.Write(t.bShowCursor); err != nil {
+	if err := t.WriteString(w, t.ShowCursor); err != nil {
 		if Debug {
 			log.Printf("error writing to out : %v", err)
 		}
@@ -810,7 +812,7 @@ func (t *Commander) PutShowCursor(w io.Writer) {
 }
 
 func (t *Commander) PutEnableAcs(w io.Writer) {
-	if _, err := w.Write(t.bEnableAcs); err != nil {
+	if err := t.WriteString(w, t.EnableAcs); err != nil {
 		if Debug {
 			log.Printf("error writing to out : %v", err)
 		}
@@ -818,7 +820,7 @@ func (t *Commander) PutEnableAcs(w io.Writer) {
 }
 
 func (t *Commander) PutClear(w io.Writer) {
-	if _, err := w.Write(t.bClear); err != nil {
+	if err := t.WriteString(w, t.Clear); err != nil {
 		if Debug {
 			log.Printf("error writing to out : %v", err)
 		}
@@ -826,7 +828,7 @@ func (t *Commander) PutClear(w io.Writer) {
 }
 
 func (t *Commander) PutAttrOff(w io.Writer) {
-	if _, err := w.Write(t.bAttrOff); err != nil {
+	if err := t.WriteString(w, t.AttrOff); err != nil {
 		if Debug {
 			log.Printf("error writing to out : %v", err)
 		}
@@ -834,7 +836,7 @@ func (t *Commander) PutAttrOff(w io.Writer) {
 }
 
 func (t *Commander) PutExitCA(w io.Writer) {
-	if _, err := w.Write(t.bExitCA); err != nil {
+	if err := t.WriteString(w, t.ExitCA); err != nil {
 		if Debug {
 			log.Printf("error writing to out : %v", err)
 		}
@@ -842,7 +844,7 @@ func (t *Commander) PutExitCA(w io.Writer) {
 }
 
 func (t *Commander) PutExitKeypad(w io.Writer) {
-	if _, err := w.Write(t.bExitKeypad); err != nil {
+	if err := t.WriteString(w, t.ExitKeypad); err != nil {
 		if Debug {
 			log.Printf("error writing to out : %v", err)
 		}
@@ -850,7 +852,7 @@ func (t *Commander) PutExitKeypad(w io.Writer) {
 }
 
 func (t *Commander) PutBold(w io.Writer) {
-	if _, err := w.Write(t.bBold); err != nil {
+	if err := t.WriteString(w, t.Bold); err != nil {
 		if Debug {
 			log.Printf("error writing to out : %v", err)
 		}
@@ -858,7 +860,7 @@ func (t *Commander) PutBold(w io.Writer) {
 }
 
 func (t *Commander) PutUnderline(w io.Writer) {
-	if _, err := w.Write(t.bUnderline); err != nil {
+	if err := t.WriteString(w, t.Underline); err != nil {
 		if Debug {
 			log.Printf("error writing to out : %v", err)
 		}
@@ -866,7 +868,7 @@ func (t *Commander) PutUnderline(w io.Writer) {
 }
 
 func (t *Commander) PutReverse(w io.Writer) {
-	if _, err := w.Write(t.bReverse); err != nil {
+	if err := t.WriteString(w, t.Reverse); err != nil {
 		if Debug {
 			log.Printf("error writing to out : %v", err)
 		}
@@ -874,7 +876,7 @@ func (t *Commander) PutReverse(w io.Writer) {
 }
 
 func (t *Commander) PutBlink(w io.Writer) {
-	if _, err := w.Write(t.bBlink); err != nil {
+	if err := t.WriteString(w, t.Blink); err != nil {
 		if Debug {
 			log.Printf("error writing to out : %v", err)
 		}
@@ -882,7 +884,7 @@ func (t *Commander) PutBlink(w io.Writer) {
 }
 
 func (t *Commander) PutDim(w io.Writer) {
-	if _, err := w.Write(t.bDim); err != nil {
+	if err := t.WriteString(w, t.Dim); err != nil {
 		if Debug {
 			log.Printf("error writing to out : %v", err)
 		}
@@ -890,7 +892,7 @@ func (t *Commander) PutDim(w io.Writer) {
 }
 
 func (t *Commander) PutItalic(w io.Writer) {
-	if _, err := w.Write(t.bItalic); err != nil {
+	if err := t.WriteString(w, t.Italic); err != nil {
 		if Debug {
 			log.Printf("error writing to out : %v", err)
 		}
@@ -898,7 +900,7 @@ func (t *Commander) PutItalic(w io.Writer) {
 }
 
 func (t *Commander) PutStrikeThrough(w io.Writer) {
-	if _, err := w.Write(t.bStrikeThrough); err != nil {
+	if err := t.WriteString(w, t.StrikeThrough); err != nil {
 		if Debug {
 			log.Printf("error writing to out : %v", err)
 		}
@@ -906,7 +908,7 @@ func (t *Commander) PutStrikeThrough(w io.Writer) {
 }
 
 func (t *Commander) PutResetFgBg(w io.Writer) {
-	if _, err := w.Write(t.bResetFgBg); err != nil {
+	if err := t.WriteString(w, t.ResetFgBg); err != nil {
 		if Debug {
 			log.Printf("error writing to out : %v", err)
 		}
@@ -917,7 +919,7 @@ func (t *Commander) PutEnableMouse(w io.Writer) {
 	if !t.HasMouse {
 		return
 	}
-	if _, err := w.Write(t.bEnableMouse); err != nil {
+	if err := t.WriteString(w, t.EnableMouse); err != nil {
 		if Debug {
 			log.Printf("error writing to out : %v", err)
 		}
@@ -928,7 +930,7 @@ func (t *Commander) PutDisableMouse(w io.Writer) {
 	if !t.HasMouse {
 		return
 	}
-	if _, err := w.Write(t.bDisableMouse); err != nil {
+	if err := t.WriteString(w, t.DisableMouse); err != nil {
 		if Debug {
 			log.Printf("error writing to out : %v", err)
 		}
@@ -1034,128 +1036,29 @@ func NewCommander(ti *Term) *Commander {
 	// goto optimization : cache the goto instructions for each cell
 	res.bGotos = &gotoCache{mapb: make(map[int][]byte)}
 	res.bColors = &colorCache{mapb: make(map[string][]byte)}
-	// optimisation : some of the commonly used strings are prepared as []byte
-	buf := bytes.NewBuffer(nil)
-	if err := res.WriteString(buf, ti.EnterCA); err != nil {
-		if Debug {
-			log.Printf("error making bytes : %v", err)
-		}
-	}
-	res.bEnterCA = buf.Bytes()
-	buf.Reset()
-	if err := res.WriteString(buf, ti.HideCursor); err != nil {
-		if Debug {
-			log.Printf("error making bytes : %v", err)
-		}
-	}
-	res.bHideCursor = buf.Bytes()
-	res.HasHideCursor = len(ti.HideCursor) != 0
-	buf.Reset()
-	if err := res.WriteString(buf, ti.ShowCursor); err != nil {
-		if Debug {
-			log.Printf("error making bytes : %v", err)
-		}
-	}
-	res.bShowCursor = buf.Bytes()
-	buf.Reset()
-	if err := res.WriteString(buf, ti.EnableAcs); err != nil {
-		if Debug {
-			log.Printf("error making bytes : %v", err)
-		}
-	}
-	res.bEnableAcs = buf.Bytes()
-	buf.Reset()
-	if err := res.WriteString(buf, ti.Clear); err != nil {
-		if Debug {
-			log.Printf("error making bytes : %v", err)
-		}
-	}
-	res.bClear = buf.Bytes()
-	buf.Reset()
-	if err := res.WriteString(buf, ti.AttrOff); err != nil {
-		if Debug {
-			log.Printf("error making bytes : %v", err)
-		}
-	}
-	res.bAttrOff = buf.Bytes()
-	buf.Reset()
-	if err := res.WriteString(buf, ti.ExitCA); err != nil {
-		if Debug {
-			log.Printf("error making bytes : %v", err)
-		}
-	}
-	res.bExitCA = buf.Bytes()
-	buf.Reset()
-	if err := res.WriteString(buf, ti.ExitKeypad); err != nil {
-		if Debug {
-			log.Printf("error making bytes : %v", err)
-		}
-	}
-	res.bExitKeypad = buf.Bytes()
-	buf.Reset()
-	if err := res.WriteString(buf, ti.Bold); err != nil {
-		if Debug {
-			log.Printf("error making bytes : %v", err)
-		}
-	}
-	res.bBold = buf.Bytes()
-	buf.Reset()
-	if err := res.WriteString(buf, ti.Underline); err != nil {
-		if Debug {
-			log.Printf("error making bytes : %v", err)
-		}
-	}
-	res.bUnderline = buf.Bytes()
-	buf.Reset()
-	if err := res.WriteString(buf, ti.Reverse); err != nil {
-		if Debug {
-			log.Printf("error making bytes : %v", err)
-		}
-	}
-	res.bReverse = buf.Bytes()
-	buf.Reset()
-	if err := res.WriteString(buf, ti.Blink); err != nil {
-		if Debug {
-			log.Printf("error making bytes : %v", err)
-		}
-	}
-	res.bBlink = buf.Bytes()
-	buf.Reset()
-	if err := res.WriteString(buf, ti.Dim); err != nil {
-		if Debug {
-			log.Printf("error making bytes : %v", err)
-		}
-	}
-	res.bDim = buf.Bytes()
-	buf.Reset()
-	if err := res.WriteString(buf, ti.Italic); err != nil {
-		if Debug {
-			log.Printf("error making bytes : %v", err)
-		}
-	}
-	res.bItalic = buf.Bytes()
-	buf.Reset()
-	if err := res.WriteString(buf, ti.StrikeThrough); err != nil {
-		if Debug {
-			log.Printf("error making bytes : %v", err)
-		}
-	}
-	res.bStrikeThrough = buf.Bytes()
-	buf.Reset()
-	if err := res.WriteString(buf, ti.ResetFgBg); err != nil {
-		if Debug {
-			log.Printf("error making bytes : %v", err)
-		}
-	}
-	res.bResetFgBg = buf.Bytes()
-
+	res.EnterCA = ti.EnterCA
+	res.HideCursor = ti.HideCursor
+	res.ShowCursor = ti.ShowCursor
+	res.EnableAcs = ti.EnableAcs
+	res.Clear = ti.Clear
+	res.AttrOff = ti.AttrOff
+	res.ExitCA = ti.ExitCA
+	res.ExitKeypad = ti.ExitKeypad
+	res.Bold = ti.Bold
+	res.Underline = ti.Underline
+	res.Reverse = ti.Reverse
+	res.Blink = ti.Blink
+	res.Dim = ti.Dim
+	res.Italic = ti.Italic
+	res.StrikeThrough = ti.StrikeThrough
+	res.ResetFgBg = ti.ResetFgBg
 	res.HasMouse = len(ti.Mouse) != 0
 	if res.HasMouse {
-		enableMouse := res.TParam(ti.MouseMode, 1)
-		res.bEnableMouse = []byte(enableMouse)
-		disableMouse := res.TParam(ti.MouseMode, 0)
-		res.bDisableMouse = []byte(disableMouse)
+		res.EnableMouse = res.TParam(ti.MouseMode, 1)
+		res.DisableMouse = res.TParam(ti.MouseMode, 0)
 	}
+	res.HideCursor = ti.HideCursor
+	res.ShowCursor = ti.ShowCursor
 	res.PadChar = ti.PadChar
 	res.Colors = ti.Colors
 	res.SetFg = ti.SetFg
@@ -1169,27 +1072,6 @@ func NewCommander(ti *Term) *Commander {
 	res.AltChars = ti.AltChars
 	res.EnterAcs = ti.EnterAcs
 	res.ExitAcs = ti.ExitAcs
-
-	if Debug {
-		log.Printf("EnterCA = %#v", res.bEnterCA)
-		log.Printf("HideCursor = %#v", res.bHideCursor)
-		log.Printf("ShowCursor = %#v", res.bShowCursor)
-		log.Printf("EnableAcs = %#v", res.bEnableAcs)
-		log.Printf("Clear = %#v", res.bClear)
-		log.Printf("AttrOff = %#v", res.bAttrOff)
-		log.Printf("ExitCA = %#v", res.bExitCA)
-		log.Printf("ExitKeypad = %#v", res.bExitKeypad)
-		log.Printf("Bold = %#v", res.bBold)
-		log.Printf("Underline = %#v", res.bUnderline)
-		log.Printf("Reverse = %#v", res.bReverse)
-		log.Printf("Blink = %#v", res.bBlink)
-		log.Printf("Dim = %#v", res.bDim)
-		log.Printf("Italic = %#v", res.bItalic)
-		log.Printf("StrikeThrough = %#v", res.bStrikeThrough)
-		log.Printf("ResetFgBg = %#v", res.bResetFgBg)
-		log.Printf("EnableMouse = %#v", res.bEnableMouse)
-		log.Printf("DisableMouse = %#v", res.bDisableMouse)
-	}
 	return &res
 }
 

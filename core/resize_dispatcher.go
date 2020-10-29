@@ -2,9 +2,9 @@ package core
 
 import (
 	"context"
-	"fmt"
 	"io"
 	"log"
+	"os"
 
 	"github.com/badu/term"
 )
@@ -124,7 +124,7 @@ func (c *core) lifeCycle(ctx context.Context) {
 				log.Printf("[core] internal shutdown error : %v", err)
 			}
 		}
-		fmt.Println(c.comm.Clear) // clears the terminal screen after shutdown
+		c.comm.PutClear(os.Stdout) // clears the terminal screen after shutdown
 		if Debug {
 			log.Println("[core] shutdown complete")
 		}

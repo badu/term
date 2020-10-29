@@ -150,6 +150,7 @@ func (r *listener) lifeCycle(ctx context.Context, cancel func()) {
 		hasChange := true
 
 		r.init(size)
+		r.engine.HideCursor()
 		r.drawBox(1, 1, 42, 7, white, encoding.Space)
 		r.emitStr(2, 2, rgb, "Press ESC twice to exit, C to clear.")
 		r.emitStr(2, 3, white, "Click and drag to draw a rectangle.")
@@ -168,7 +169,6 @@ func (r *listener) lifeCycle(ctx context.Context, cancel func()) {
 				r.emitStr(2+len(mouseStr), 4, white, fmt.Sprintf(mousePosition, mouseCol, mouseRow))
 				r.emitStr(2+len(buttonsStr), 5, white, fmt.Sprintf(buttonsInfo, bstr))
 				r.emitStr(2+len(keysStr), 6, white, fmt.Sprintf(keysInfo, keyEventName))
-				r.engine.HideCursor()
 				hasChange = false
 			}
 			select {
@@ -205,8 +205,6 @@ func (r *listener) lifeCycle(ctx context.Context, cancel func()) {
 						cancel()
 						return
 					}
-				case key.CtrlL:
-					escapeCount = 0
 				default:
 					escapeCount = 0
 					if ev.Rune() == 'C' || ev.Rune() == 'c' {

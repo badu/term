@@ -25,8 +25,6 @@ func newEncoder(parent *encoding.Encoder) *encoder {
 	return &res
 }
 
-type encodeRuneFunc func(r rune, buf []byte) []byte
-
 // encodeRune appends a buffer with encoded runes
 func (c *encoder) encodeRune(r rune, buf []byte) []byte {
 	c.Lock()
