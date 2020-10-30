@@ -3,6 +3,8 @@ package app
 import (
 	"context"
 	"sync"
+
+	"github.com/badu/term/geom"
 )
 
 // ApplicationOption
@@ -12,12 +14,12 @@ type ApplicationOption func(a *Application)
 type Application struct {
 	sync.RWMutex
 	ctx     context.Context
-	cancels map[*Page]func()
-	pages   []Page
+	cancels map[*geom.Page]func()
+	pages   []geom.Page
 }
 
 // WithPage
-func WithPage(p *Page) ApplicationOption {
+func WithPage(p *geom.Page) ApplicationOption {
 	return func(a *Application) {
 		a.AddPage(p)
 	}
@@ -39,20 +41,20 @@ func (a *Application) Start(ctx context.Context) {
 }
 
 // AddPage
-func (a *Application) AddPage(p *Page) {
+func (a *Application) AddPage(p *geom.Page) {
 	pageCtx, cancel := context.WithCancel(a.ctx)
 	a.cancels[p] = cancel
-	WithContext(pageCtx)
+	geom.WithEngine(pageCtx)
 	a.pages = append(a.pages, *p)
 }
 
 // DeactivatePage
-func (a *Application) DeactivatePage(p *Page) {
+func (a *Application) DeactivatePage(p *geom.Page) {
 
 }
 
 // RemovePage
-func (a *Application) RemovePage(p *Page) {
+func (a *Application) RemovePage(p *geom.Page) {
 	a.Lock()
 	defer a.Unlock()
 	a.cancels[p]()

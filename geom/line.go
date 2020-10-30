@@ -85,12 +85,12 @@ func (l *Line) Resize(size term.Size) {
 	l.acquirePositions()
 }
 
-// Position gets the current top-left position of this line object, relative to its parent / canvas
+// Position gets the current top-left position of this line object, relative to its children / canvas
 func (l *Line) Position() term.Position {
 	return term.NewPosition(term.Min(l.topLeft.Column, l.bottomRight.Column), term.Min(l.topLeft.Row, l.bottomRight.Row))
 }
 
-// Move the line object to a new position, relative to its parent / canvas
+// Move the line object to a new position, relative to its children / canvas
 func (l *Line) Move(pos *term.Position) {
 	size := l.Size()
 	l.topLeft = pos

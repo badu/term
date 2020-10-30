@@ -2,12 +2,27 @@ package geom
 
 import (
 	"context"
+	"errors"
+	"log"
 	"sync"
 
 	"github.com/badu/term"
 	"github.com/badu/term/color"
 	"github.com/badu/term/style"
 )
+
+var (
+	rectCounter = 0
+	mu          sync.Mutex
+)
+
+// we cannot compare rectangles, for this reason we're using this incremental id
+func getNextRectId() int {
+	mu.Lock()
+	defer mu.Unlock()
+	rectCounter++
+	return rectCounter
+}
 
 // RectangleOption
 type RectangleOption func(r *Rectangle)
@@ -47,21 +62,40 @@ func WithAlignment(a style.Alignment) RectangleOption {
 	}
 }
 
+// WithOrientation
+func WithOrientation(o style.Orientation) RectangleOption {
+	return func(r *Rectangle) {
+		r.orientation = o
+	}
+}
+
+// WithMinSize
 func WithMinSize(size *term.Size) RectangleOption {
 	return func(r *Rectangle) {
 		r.min = size
 	}
 }
 
-// WithVariableSizeInParent
-func WithVariableSizeInParent(parent *Rectangle, widthPercent, heightPercent int) RectangleOption {
+// WithChildren
+func WithChildren(children ...*Rectangle) RectangleOption {
 	return func(r *Rectangle) {
-		r.parent = parent
-		if widthPercent > 0 {
-			r.width = &widthPercent // only positive values set, so we allow variable width with fixed height and vice versa
-		}
-		if heightPercent > 0 {
-			r.height = &heightPercent
+		for _, child := range children {
+			if child.bg == color.Default {
+				child.bg = r.bg // inherit background color
+			}
+			if child.fg == color.Default {
+				child.fg = r.fg // inherit foreground color
+			}
+			wasAlreadyAddedToChildren := false
+			if child.width != nil {
+				r.children = append(r.children, child) // mark it as resizable in this parent
+				wasAlreadyAddedToChildren = true
+			}
+			if child.height != nil {
+				if !wasAlreadyAddedToChildren {
+					r.children = append(r.children, child) // mark it as resizable in this parent
+				}
+			}
 		}
 	}
 }
@@ -90,42 +124,342 @@ func WithRowColAndSize(row, column, numRows, numCols int) RectangleOption {
 	}
 }
 
+// WithAcquisitionChan is provided by the caller, so we can "ask" for pixels
+func WithAcquisitionChan(pixelCh chan term.Position) RectangleOption {
+	return func(r *Rectangle) {
+		r.pixelAskCh = pixelCh
+	}
+}
+
+// WithReleasingChan is provided by the caller, so we can "free" pixels
+func WithReleasingChan(relePixelCh chan term.Position) RectangleOption {
+	return func(r *Rectangle) {
+		r.pixelReleaseCh = relePixelCh
+	}
+}
+
 // Rectangle describes a colored rectangle primitive
 type Rectangle struct {
-	sync.RWMutex                   // guards properties
-	parent       *Rectangle        // parent Rectangle, used for variable sizing
-	width        *int              // width in percents, pointer indicates is optional
-	height       *int              // height in percents, pointer indicates is optional
-	positions    [][]term.Position // pixels references [col][row]
-	min          *term.Size        // The minimum size this object can be
-	topCorner    term.Position     // The current top corner of the Rectangle
-	bottomCorner term.Position     // The current top corner of the Rectangle
-	aligned      style.Alignment   // alignment
-	fg           color.Color       // The rectangle fill color
-	bg           color.Color       // The rectangle stroke color
-	hidden       bool              // Is this object currently hidden
+	id             int                //
+	rows           [][]px             // when organized by rows
+	cols           [][]px             // when organized by cols
+	children       []*Rectangle       // children Rectangles, used for variable sizing // TODO : mount death listener for children
+	topCorner      term.Position      // The current top corner of the Rectangle
+	bottomCorner   term.Position      // The current top corner of the Rectangle
+	aligned        style.Alignment    // alignment. Default is style.Begin (topCorner)
+	orientation    style.Orientation  // orientation dictates pixel slices above (rows or cols). Default orientation is style.Vertical
+	fg             color.Color        // The rectangle fill color
+	bg             color.Color        // The rectangle stroke color
+	died           chan struct{}      // Channel for killing (context.Done)
+	pixelAskCh     chan term.Position // Channel for asking pixels
+	pixelReleaseCh chan term.Position // Channel for releasing pixels
+	pixelReceiveCh chan px            // Channel for receiving pixels
+	width          *int               // width in percents, pointer indicates is optional
+	height         *int               // height in percents, pointer indicates is optional
+	min            *term.Size         // The minimum size this object can be. Note that this can exist in the same time with width/height in percents // TODO : check new size (%) is not smaller than min allowed size
+	hidden         bool               // Is this object currently hidden
+}
+
+// NewRectangle returns a new Rectangle instance
+func NewRectangle(ctx context.Context, opts ...RectangleOption) (*Rectangle, error) {
+	res := &Rectangle{
+		id:             getNextRectId(),
+		orientation:    style.Vertical, // default orientation
+		aligned:        style.Begin,    // aligned top left
+		fg:             color.Default,  // default colors
+		bg:             color.Default,
+		pixelAskCh:     make(chan term.Position),
+		pixelReleaseCh: make(chan term.Position),
+		pixelReceiveCh: make(chan px),
+		died:           make(chan struct{}),
+		topCorner:      term.Position{Row: -1, Column: -1}, // default
+		bottomCorner:   term.Position{Row: -1, Column: -1},
+	}
+	for _, opt := range opts {
+		opt(res)
+	}
+	if res.OffScreen() {
+		return nil, errors.New("rectangle lacks valid coordinates")
+	}
+	if res.pixelAskCh == nil {
+		return nil, errors.New("acquisition channel is mandatory")
+	}
+	rectSize := res.Size() // init rows/cols
+	if rectSize.Width <= 0 || rectSize.Height <= 0 {
+		return nil, errors.New("invalid rectangle size")
+	}
+	log.Printf("%03d rows %03d colums", rectSize.Height, rectSize.Width)
+	switch res.orientation {
+	case style.Vertical:
+		log.Println("Vertical (ROWS)")
+		res.rows = make([][]px, rectSize.Height)
+		for row := 0; row < rectSize.Height; row++ {
+			res.rows[row] = make([]px, rectSize.Width)
+		}
+	case style.Horizontal:
+		log.Println("Horizontal (COLUMNS)")
+		res.cols = make([][]px, rectSize.Width)
+		for col := 0; col < rectSize.Width; col++ {
+			res.cols[col] = make([]px, rectSize.Height)
+		}
+	default:
+		return nil, errors.New("orientation must be horizontal (rows) or vertical (columns)")
+	}
+	// all ok, listening for context.Done to exit
+	go func() {
+		for {
+			select {
+			case <-ctx.Done():
+				res.releasePositions()
+				res.died <- struct{}{} // tell the Page that we've died, to free up pixels
+				return
+			case pix := <-res.pixelReceiveCh:
+				res.registerPixel(pix)
+			}
+		}
+	}()
+	return res, nil
+}
+
+// OffScreen returns true if coordinates are not set
+func (r *Rectangle) OffScreen() bool {
+	return r.topCorner.Row < 0 || r.topCorner.Column < 0 || r.bottomCorner.Row < 0 || r.bottomCorner.Column < 0
+}
+
+// Id is used by Page to identify owners and operate them
+func (r *Rectangle) Id() int {
+	return r.id
+}
+
+// PixelAskChan - used by Page to deliver pixels
+func (r *Rectangle) PixelAskChan() chan term.Position {
+	return r.pixelAskCh
+}
+
+// PixelReleaseChan - use by Page to change owner of the pixel
+func (r *Rectangle) PixelReleaseChan() chan term.Position {
+	return r.pixelReleaseCh
+}
+
+// PixelReceiverChan - used by Rectangle to get pixels from Page
+func (r *Rectangle) PixelReceiverChan() chan px {
+	return r.pixelReceiveCh
+}
+
+// CurrentSize returns the current size of this rectangle object
+func (r *Rectangle) Size() term.Size {
+	return term.NewSize(r.bottomCorner.Row-r.topCorner.Row+1, r.bottomCorner.Column-r.topCorner.Column+1)
+}
+
+// Width returns r's width.
+func (r *Rectangle) Width() int {
+	return r.bottomCorner.Column - r.topCorner.Column
+}
+
+// Height returns r's height.
+func (r *Rectangle) Height() int {
+	return r.bottomCorner.Row - r.topCorner.Row
+}
+
+// Row returns the row of pixels at index (absolute, starting with zero)
+// if Rectangle is vertical oriented (columns), returns nothing (shame on caller)
+func (r *Rectangle) Row(index int) []px {
+	if r.orientation == style.Horizontal {
+		log.Println("bad call to Rectangle.Row : orientation is not horizontal")
+		return nil
+	}
+	if index <= 0 {
+		log.Println("bad call to Rectangle.Row : bad index")
+		return nil
+	}
+	if index-1 > len(r.rows) {
+		log.Println("bad call to Rectangle.Row : index outside number of rows")
+		return nil
+	}
+	return r.rows[index-1]
+}
+
+// Column returns the column of pixels at index (absolute, starting with zero)
+// if Rectangle is horizontal oriented (rows), returns nothing (shame on caller)
+func (r *Rectangle) Column(index int) []px {
+	if r.orientation == style.Vertical {
+		log.Println("bad call to Rectangle.Column : orientation is not vertical")
+		return nil
+	}
+	if index <= 0 {
+		log.Println("bad call to Rectangle.Column : bad index")
+		return nil
+	}
+	if index-1 > len(r.cols) {
+		log.Println("bad call to Rectangle.Column : index outside number of columns")
+		return nil
+	}
+	return r.cols[index-1]
+}
+
+// Move the rectangle object to a new position, relative to its children / canvas
+func (r *Rectangle) Move(pos term.Position) {
+	r.topCorner = pos
+	r.acquirePositions()
+}
+
+// MinSize returns the specified minimum size, if set, or nil otherwise
+func (r *Rectangle) MinSize() *term.Size {
+	return r.min
+}
+
+// SetMinSize specifies the smallest size this object should be
+func (r *Rectangle) SetMinSize(size *term.Size) {
+	r.min = size
+}
+
+// IsVisible returns true if this object is visible, false otherwise
+func (r *Rectangle) Visible() bool {
+	return !r.hidden
+}
+
+// Show will set this object to be visible
+func (r *Rectangle) Show() {
+	r.hidden = false
+	r.acquirePositions()
+}
+
+// Hide will set this object to not be visible
+func (r *Rectangle) Hide() {
+	r.hidden = true
+	r.releasePositions()
+}
+
+// Bg
+func (r *Rectangle) Bg() color.Color {
+	return r.bg
+}
+
+// Fg
+func (r *Rectangle) Fg() color.Color {
+	return r.fg
+}
+
+// Top
+func (r *Rectangle) Top() term.Position {
+	return r.topCorner
+}
+
+// Bottom
+func (r *Rectangle) Bottom() term.Position {
+	return r.bottomCorner
+}
+
+// Empty returns if the Rectangle is zero rows and zero columns
+func (r *Rectangle) Empty() bool {
+	return r.topCorner.Row >= r.bottomCorner.Row || r.topCorner.Column >= r.bottomCorner.Column
+}
+
+// Union returns the smallest rectangle that contains both r and s.
+func (r *Rectangle) Union(s *Rectangle) *Rectangle {
+	if r.Empty() {
+		return s
+	}
+	if s.Empty() {
+		return r
+	}
+	if r.topCorner.Row > s.topCorner.Row {
+		r.topCorner.Row = s.topCorner.Row
+	}
+	if r.topCorner.Column > s.topCorner.Column {
+		r.topCorner.Column = s.topCorner.Column
+	}
+	if r.bottomCorner.Row < s.bottomCorner.Row {
+		r.bottomCorner.Row = s.bottomCorner.Row
+	}
+	if r.bottomCorner.Column < s.bottomCorner.Column {
+		r.bottomCorner.Column = s.bottomCorner.Column
+	}
+	return r
+}
+
+// Inset returns the rectangle r inset by n, which may be negative. If either
+// of r's dimensions is less than 2*n then an empty rectangle near the center
+// of r will be returned.
+func (r *Rectangle) Inset(n int) *Rectangle {
+	if r.Width() < 2*n {
+		r.topCorner.Column = (r.topCorner.Column + r.bottomCorner.Column) / 2
+		r.bottomCorner.Column = r.topCorner.Column
+	} else {
+		r.topCorner.Column += n
+		r.bottomCorner.Column -= n
+	}
+	if r.Height() < 2*n {
+		r.topCorner.Row = (r.topCorner.Row + r.bottomCorner.Row) / 2
+		r.bottomCorner.Row = r.topCorner.Row
+	} else {
+		r.topCorner.Row += n
+		r.bottomCorner.Row -= n
+	}
+	return r
+}
+
+// Intersect returns the largest rectangle contained by both r and s. If the
+// two rectangles do not overlap then the zero rectangle will be returned.
+func (r *Rectangle) Intersect(s *Rectangle) *Rectangle {
+	if r.topCorner.Column < s.topCorner.Column {
+		r.topCorner.Column = s.topCorner.Column
+	}
+	if r.topCorner.Row < s.topCorner.Row {
+		r.topCorner.Row = s.topCorner.Row
+	}
+	if r.bottomCorner.Column > s.bottomCorner.Column {
+		r.bottomCorner.Column = s.bottomCorner.Column
+	}
+	if r.bottomCorner.Row > s.bottomCorner.Row {
+		r.bottomCorner.Row = s.bottomCorner.Row
+	}
+	// Letting r0 and s0 be the values of r and s at the time that the method
+	// is called, this next line is equivalent to:
+	//
+	// if max(r0.Min.X, s0.Min.X) >= min(r0.Max.X, s0.Max.X) || likewiseForY { etc }
+	if r.Empty() {
+		return &Rectangle{}
+	}
+	return r
+}
+
+// Overlaps reports whether r and s have a non-empty intersection.
+func (r *Rectangle) Overlaps(s *Rectangle) bool {
+	return !r.Empty() && !s.Empty() &&
+		r.topCorner.Column < s.bottomCorner.Column && s.topCorner.Column < r.bottomCorner.Column &&
+		r.topCorner.Row < s.bottomCorner.Row && s.topCorner.Row < r.bottomCorner.Row
+}
+
+// In reports whether every point in r is in s.
+func (r *Rectangle) In(s *Rectangle) bool {
+	if r.Empty() {
+		return true
+	}
+	// Note that r.Max is an exclusive bound for r, so that r.In(s)
+	// does not require that r.Max.In(s).
+	return s.topCorner.Column <= r.topCorner.Column && r.bottomCorner.Column <= s.bottomCorner.Column &&
+		s.topCorner.Row <= r.topCorner.Row && r.bottomCorner.Row <= s.bottomCorner.Row
 }
 
 // Resize on a rectangle updates the new size of this object.
 // If it has a stroke width this will cause it to Refresh.
 func (r *Rectangle) Resize(size *term.Size) {
-	r.Lock()
-	defer r.Unlock()
 	hasWidthPercent := r.width != nil
 	hasHeightPercent := r.height != nil
 	if hasWidthPercent || hasHeightPercent {
 		widthDiff := 0
-		ps := r.parent.Size()
+		//ps := r.children.Size()
 		if hasWidthPercent {
-			newWidth := ps.Width * (*r.width) / 100 // 30% from 100 pxs
-			widthDiff = newWidth - r.bottomCorner.Column
-			r.bottomCorner.Column = newWidth
+			//	newWidth := ps.Width * (*r.width) / 100 // 30% from 100 pxs
+			//	widthDiff = newWidth - r.bottomCorner.Column
+			//	r.bottomCorner.Column = newWidth
 		}
 		heightDiff := 0
 		if hasHeightPercent {
-			newHeight := ps.Height * (*r.height) / 100
-			heightDiff = newHeight - r.bottomCorner.Row
-			r.bottomCorner.Row = newHeight
+			//	newHeight := ps.Height * (*r.height) / 100
+			//	heightDiff = newHeight - r.bottomCorner.Row
+			//	r.bottomCorner.Row = newHeight
 		}
 		if !r.hidden {
 			// TODO : acquire new pixels
@@ -140,86 +474,26 @@ func (r *Rectangle) acquirePositions() {
 	colDist := term.Abs(r.bottomCorner.Column - r.topCorner.Column)
 	minCol := term.Min(r.bottomCorner.Column, r.topCorner.Column)
 	minRow := term.Min(r.bottomCorner.Row, r.topCorner.Row)
-	r.positions = make([][]term.Position, rowDist)
 	for col := minCol; col < colDist; col++ {
-		r.positions[col] = make([]term.Position, colDist)
 		for row := minRow; row < rowDist; row++ {
-			r.positions[col][row] = term.Position{}
+			r.pixelAskCh <- term.Position{Row: row, Column: col}
 		}
 	}
 }
 
 func (r *Rectangle) releasePositions() {
-	r.positions = nil
-}
-
-// NewRectangle returns a new Rectangle instance
-func NewRectangle(ctx context.Context, opts ...RectangleOption) *Rectangle {
-	res := &Rectangle{}
-	for _, opt := range opts {
-		opt(res)
-	}
-	return res
-}
-
-// CurrentSize returns the current size of this rectangle object
-func (r *Rectangle) Size() term.Size {
-	r.RLock()
-	defer r.RUnlock()
-	return term.NewSize(term.Abs(r.bottomCorner.Row-r.topCorner.Row), term.Abs(r.bottomCorner.Column-r.topCorner.Column))
-}
-
-// CurrentPosition gets the current position of this rectangle object, relative to its parent / canvas
-func (r *Rectangle) Position() term.Position {
-	r.RLock()
-	defer r.RUnlock()
+	rowDist := term.Abs(r.bottomCorner.Row - r.topCorner.Row)
+	colDist := term.Abs(r.bottomCorner.Column - r.topCorner.Column)
 	minCol := term.Min(r.bottomCorner.Column, r.topCorner.Column)
 	minRow := term.Min(r.bottomCorner.Row, r.topCorner.Row)
-	return term.Position{Row: minRow, Column: minCol}
+	for col := minCol; col < colDist; col++ {
+		for row := minRow; row < rowDist; row++ {
+			r.pixelReleaseCh <- term.Position{Row: row, Column: col}
+		}
+	}
 }
 
-// Move the rectangle object to a new position, relative to its parent / canvas
-func (r *Rectangle) Move(pos term.Position) {
-	r.Lock()
-	defer r.Unlock()
-	r.topCorner = pos
-	r.acquirePositions()
-}
+// registerPixel a pixel was received from a Page
+func (r *Rectangle) registerPixel(pixel px) {
 
-// MinSize returns the specified minimum size, if set, or nil otherwise
-func (r *Rectangle) MinSize() *term.Size {
-	r.RLock()
-	defer r.RUnlock()
-
-	return r.min
-}
-
-// SetMinSize specifies the smallest size this object should be
-func (r *Rectangle) SetMinSize(size *term.Size) {
-	r.Lock()
-	defer r.Unlock()
-	r.min = size
-}
-
-// IsVisible returns true if this object is visible, false otherwise
-func (r *Rectangle) Visible() bool {
-	r.RLock()
-	defer r.RUnlock()
-	return !r.hidden
-}
-
-// Show will set this object to be visible
-func (r *Rectangle) Show() {
-	r.Lock()
-	defer r.Unlock()
-	r.hidden = false
-	r.acquirePositions()
-}
-
-// Hide will set this object to not be visible
-func (r *Rectangle) Hide() {
-	r.Lock()
-	defer r.Unlock()
-	r.hidden = true
-	r.releasePositions()
 }

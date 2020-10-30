@@ -26,6 +26,11 @@ type EventResize struct {
 	size *term.Size
 }
 
+// NewResizeEvent
+func NewResizeEvent(cols, rows int) *EventResize {
+	return &EventResize{size: &term.Size{Width: cols, Height: rows}}
+}
+
 // Size
 func (e *EventResize) Size() *term.Size {
 	return e.size

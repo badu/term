@@ -79,7 +79,7 @@ func (l *LinearGradient) Resize(size term.Size) {
 	l.size = size
 }
 
-// CurrentPosition gets the current position of this rectangle object, relative to its parent / canvas
+// CurrentPosition gets the current position of this rectangle object, relative to its children / canvas
 func (l *LinearGradient) Position() term.Position {
 	l.RLock()
 	defer l.RUnlock()
@@ -87,7 +87,7 @@ func (l *LinearGradient) Position() term.Position {
 	return l.position
 }
 
-// Move the rectangle object to a new position, relative to its parent / canvas
+// Move the rectangle object to a new position, relative to its children / canvas
 func (l *LinearGradient) Move(pos term.Position) {
 	l.Lock()
 	defer l.Unlock()
@@ -270,7 +270,7 @@ func (r *RadialGradient) Resize(size term.Size) {
 	r.size = size
 }
 
-// CurrentPosition gets the current position of this rectangle object, relative to its parent / canvas
+// CurrentPosition gets the current position of this rectangle object, relative to its children / canvas
 func (r *RadialGradient) Position() term.Position {
 	r.RLock()
 	defer r.RUnlock()
@@ -278,7 +278,7 @@ func (r *RadialGradient) Position() term.Position {
 	return r.position
 }
 
-// Move the rectangle object to a new position, relative to its parent / canvas
+// Move the rectangle object to a new position, relative to its children / canvas
 func (r *RadialGradient) Move(pos term.Position) {
 	r.Lock()
 	defer r.Unlock()

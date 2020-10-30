@@ -280,3 +280,17 @@ func NewPixel(opts ...PixelOption) (term.Pixel, error) {
 	}
 	return res, nil
 }
+
+// internal constructor, used mainly by Page
+func newPixel(col, row int) px {
+	defPos := term.Position{Row: row, Column: col}
+	res := px{
+		pos:     defPos,
+		drawCh:  make(chan term.PixelGetter),
+		bgCol:   color.Default,  // default has color Default
+		fgCol:   color.Default,  // default has color Default
+		attrs:   style.None,     // default has no style
+		content: encoding.Space, // it's just a space char
+	}
+	return res
+}
