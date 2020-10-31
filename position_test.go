@@ -29,7 +29,7 @@ func TestUnhash(t *testing.T) {
 		rows    = 500
 	)
 	// make hashes
-	hashMap := make(map[int]term.Position)
+	hashMap := make(map[int]*term.Position)
 	for col := 0; col <= columns; col++ {
 		for row := 0; row <= rows; row++ {
 			currHash := term.Hash(col, row)
@@ -54,7 +54,7 @@ func TestUnhashNeg(t *testing.T) {
 		rows    = 500
 	)
 	// make hashes
-	hashMap := make(map[int]term.Position)
+	hashMap := make(map[int]*term.Position)
 	for col := -columns; col <= columns; col++ {
 		for row := -rows; row <= rows; row++ {
 			currHash := term.Hash(col, row)
@@ -84,5 +84,30 @@ func TestHashUnHashMinusOne(t *testing.T) {
 	}
 	if rowMinusOne != -1 {
 		t.Fatal("row should be -1")
+	}
+}
+
+func TestCenter(t *testing.T) {
+	p1 := term.NewPosition(1, 1)
+	p2 := term.NewPosition(4, 4)
+	p3 := term.NewPosition(3, 3)
+	p4 := term.NewPosition(6, 5)
+	if s := term.Center(p1, p1); s.Column != 0 || s.Row != 0 {
+		t.Fatal("center should be col=0 row=0", s.Column, s.Row)
+	}
+	if s := term.Center(p1, p2); s.Column != 1 || s.Row != 1 {
+		t.Fatal("center should be col=1 row=1", s.Column, s.Row)
+	}
+	if s := term.Center(p1, p3); s.Column != 1 || s.Row != 1 {
+		t.Fatal("center should be col=1 row=1", s.Column, s.Row)
+	}
+	if s := term.Center(p2, p3); s.Column != 0 || s.Row != 0 {
+		t.Fatal("center should be col=0 row=0", s.Column, s.Row)
+	}
+	if s := term.Center(p1, p4); s.Column != 2 || s.Row != 2 {
+		t.Fatal("center should be col=0 row=0", s.Column, s.Row)
+	}
+	if s := term.Center(p2, p4); s.Column != 1 || s.Row != 0 {
+		t.Fatal("center should be col=0 row=0", s.Column, s.Row)
 	}
 }

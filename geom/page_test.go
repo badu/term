@@ -11,15 +11,19 @@ import (
 	initLog "github.com/badu/term/log"
 )
 
+func testAcquisitionChan() geom.RectangleOption {
+	return geom.WithAcquisitionChan(make(chan term.Position))
+}
+
 func TestMoveToFront(t *testing.T) {
 	o := make(geom.Owners, 0)
 	ctx, cancel := context.WithCancel(context.Background())
-	r, err := geom.NewRectangle(ctx, geom.WithTopCorner(term.NewPosition(10, 10)), geom.WithAcquisitionChan(make(chan term.Position)))
+	r, err := geom.NewRectangle(ctx, geom.WithTopCorner(10, 10), geom.WithBottomCorner(20, 20), testAcquisitionChan())
 	if err != nil {
 		t.Fatalf("error : %v", err)
 	}
 	o.Add(r)
-	r2, err := geom.NewRectangle(ctx, geom.WithTopCorner(term.NewPosition(30, 30)), geom.WithAcquisitionChan(make(chan term.Position)))
+	r2, err := geom.NewRectangle(ctx, geom.WithTopCorner(30, 30), geom.WithBottomCorner(32, 32), testAcquisitionChan())
 	if err != nil {
 		t.Fatalf("error : %v", err)
 	}
@@ -34,7 +38,7 @@ func TestMoveToFront(t *testing.T) {
 	for _, r := range o {
 		t.Logf("rect %d : %#v", r.Id(), r)
 	}
-	r3, err := geom.NewRectangle(ctx, geom.WithTopCorner(term.NewPosition(20, 20)), geom.WithAcquisitionChan(make(chan term.Position)))
+	r3, err := geom.NewRectangle(ctx, geom.WithTopCorner(20, 20), geom.WithBottomCorner(22, 22), testAcquisitionChan())
 	if err != nil {
 		t.Fatalf("error : %v", err)
 	}

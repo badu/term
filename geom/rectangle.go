@@ -42,16 +42,16 @@ func WithForegroundColor(c color.Color) RectangleOption {
 }
 
 // WithTopCorner
-func WithTopCorner(pos term.Position) RectangleOption {
+func WithTopCorner(col, row int) RectangleOption {
 	return func(r *Rectangle) {
-		r.topCorner = pos
+		r.topCorner = term.NewPosition(col, row)
 	}
 }
 
 // WithBottomCorner
-func WithBottomCorner(pos term.Position) RectangleOption {
+func WithBottomCorner(col, row int) RectangleOption {
 	return func(r *Rectangle) {
-		r.bottomCorner = pos
+		r.bottomCorner = term.NewPosition(col, row)
 	}
 }
 
@@ -144,8 +144,8 @@ type Rectangle struct {
 	rows           [][]px             // when organized by rows
 	cols           [][]px             // when organized by cols
 	children       []*Rectangle       // children Rectangles, used for variable sizing // TODO : mount death listener for children
-	topCorner      term.Position      // The current top corner of the Rectangle
-	bottomCorner   term.Position      // The current top corner of the Rectangle
+	topCorner      *term.Position     // The current top corner of the Rectangle
+	bottomCorner   *term.Position     // The current top corner of the Rectangle
 	aligned        style.Alignment    // alignment. Default is style.Begin (topCorner)
 	orientation    style.Orientation  // orientation dictates pixel slices above (rows or cols). Default orientation is style.Vertical
 	fg             color.Color        // The rectangle fill color
@@ -160,20 +160,21 @@ type Rectangle struct {
 	hidden         bool               // Is this object currently hidden
 }
 
+// TODO : thinking maybe this should be a private constructor. Ask Page to give you a Rectangle and it will give it already populated and ready to use. For now (testing purposes), I'll leave it as it is.
 // NewRectangle returns a new Rectangle instance
 func NewRectangle(ctx context.Context, opts ...RectangleOption) (*Rectangle, error) {
 	res := &Rectangle{
-		id:             getNextRectId(),
-		orientation:    style.Vertical, // default orientation
-		aligned:        style.Begin,    // aligned top left
-		fg:             color.Default,  // default colors
+		id:             getNextRectId(), // TODO : use some form of hash, maybe ???
+		orientation:    style.Vertical,  // default orientation
+		aligned:        style.Begin,     // aligned top left
+		fg:             color.Default,   // default colors
 		bg:             color.Default,
 		pixelAskCh:     make(chan term.Position),
 		pixelReleaseCh: make(chan term.Position),
 		pixelReceiveCh: make(chan px),
 		died:           make(chan struct{}),
-		topCorner:      term.Position{Row: -1, Column: -1}, // default
-		bottomCorner:   term.Position{Row: -1, Column: -1},
+		topCorner:      term.NewPosition(-1, -1), // default
+		bottomCorner:   term.NewPosition(-1, -1),
 	}
 	for _, opt := range opts {
 		opt(res)
@@ -247,18 +248,28 @@ func (r *Rectangle) PixelReceiverChan() chan px {
 }
 
 // CurrentSize returns the current size of this rectangle object
-func (r *Rectangle) Size() term.Size {
-	return term.NewSize(r.bottomCorner.Row-r.topCorner.Row+1, r.bottomCorner.Column-r.topCorner.Column+1)
+func (r *Rectangle) Size() *term.Size {
+	return term.NewSize(term.Width(r.topCorner, r.bottomCorner), term.Height(r.topCorner, r.bottomCorner))
 }
 
 // Width returns r's width.
 func (r *Rectangle) Width() int {
-	return r.bottomCorner.Column - r.topCorner.Column
+	return term.Width(r.topCorner, r.bottomCorner)
 }
 
 // Height returns r's height.
 func (r *Rectangle) Height() int {
-	return r.bottomCorner.Row - r.topCorner.Row
+	return term.Height(r.topCorner, r.bottomCorner)
+}
+
+// Center of a Rectangle
+func (r *Rectangle) Center() *term.Position {
+	return term.Center(r.topCorner, r.bottomCorner)
+}
+
+// HasPerfectCenter - allows the caller of Center not to fool themselves (e.g. center is shifted towards top right)
+func (r *Rectangle) HasPerfectCenter() bool {
+	return term.Width(r.topCorner, r.bottomCorner)%2 == 1 && term.Height(r.topCorner, r.bottomCorner)%2 == 1
 }
 
 // Row returns the row of pixels at index (absolute, starting with zero)
@@ -298,7 +309,7 @@ func (r *Rectangle) Column(index int) []px {
 }
 
 // Move the rectangle object to a new position, relative to its children / canvas
-func (r *Rectangle) Move(pos term.Position) {
+func (r *Rectangle) Move(pos *term.Position) {
 	r.topCorner = pos
 	r.acquirePositions()
 }
@@ -341,12 +352,12 @@ func (r *Rectangle) Fg() color.Color {
 }
 
 // Top
-func (r *Rectangle) Top() term.Position {
+func (r *Rectangle) Top() *term.Position {
 	return r.topCorner
 }
 
 // Bottom
-func (r *Rectangle) Bottom() term.Position {
+func (r *Rectangle) Bottom() *term.Position {
 	return r.bottomCorner
 }
 
@@ -378,6 +389,43 @@ func (r *Rectangle) Union(s *Rectangle) *Rectangle {
 	return r
 }
 
+// Intersect returns the largest rectangle contained by both r and s. If the
+// two rectangles do not overlap then the zero rectangle will be returned.
+func (r *Rectangle) Intersect(s *Rectangle) *Rectangle {
+	if r.topCorner.Column < s.topCorner.Column {
+		r.topCorner.Column = s.topCorner.Column
+	}
+	if r.topCorner.Row < s.topCorner.Row {
+		r.topCorner.Row = s.topCorner.Row
+	}
+	if r.bottomCorner.Column > s.bottomCorner.Column {
+		r.bottomCorner.Column = s.bottomCorner.Column
+	}
+	if r.bottomCorner.Row > s.bottomCorner.Row {
+		r.bottomCorner.Row = s.bottomCorner.Row
+	}
+	// Letting r0 and s0 be the values of r and s at the time that the method is called, this next line is equivalent to:
+	// if max(r0.topCorner.Column, s0.topCorner.Column) >= min(r0.bottomCorner.Column, s0.bottomCorner.Column) || likewiseForRow { etc }
+	if r.Empty() {
+		return &Rectangle{}
+	}
+	return r
+}
+
+// Overlaps reports whether r and s have a non-empty intersection.
+func (r *Rectangle) Overlaps(s *Rectangle) bool {
+	return !r.Empty() && !s.Empty() && r.topCorner.Column < s.bottomCorner.Column && s.topCorner.Column < r.bottomCorner.Column && r.topCorner.Row < s.bottomCorner.Row && s.topCorner.Row < r.bottomCorner.Row
+}
+
+// In reports whether every point in r is in s.
+func (r *Rectangle) In(s *Rectangle) bool {
+	if r.Empty() {
+		return true
+	}
+	// Note that r.bottomCorner is an exclusive bound for r, so that r.In(s)/ does not require that r.bottomCorner.In(s).
+	return s.topCorner.Column <= r.topCorner.Column && r.bottomCorner.Column <= s.bottomCorner.Column && s.topCorner.Row <= r.topCorner.Row && r.bottomCorner.Row <= s.bottomCorner.Row
+}
+
 // Inset returns the rectangle r inset by n, which may be negative. If either
 // of r's dimensions is less than 2*n then an empty rectangle near the center
 // of r will be returned.
@@ -397,49 +445,6 @@ func (r *Rectangle) Inset(n int) *Rectangle {
 		r.bottomCorner.Row -= n
 	}
 	return r
-}
-
-// Intersect returns the largest rectangle contained by both r and s. If the
-// two rectangles do not overlap then the zero rectangle will be returned.
-func (r *Rectangle) Intersect(s *Rectangle) *Rectangle {
-	if r.topCorner.Column < s.topCorner.Column {
-		r.topCorner.Column = s.topCorner.Column
-	}
-	if r.topCorner.Row < s.topCorner.Row {
-		r.topCorner.Row = s.topCorner.Row
-	}
-	if r.bottomCorner.Column > s.bottomCorner.Column {
-		r.bottomCorner.Column = s.bottomCorner.Column
-	}
-	if r.bottomCorner.Row > s.bottomCorner.Row {
-		r.bottomCorner.Row = s.bottomCorner.Row
-	}
-	// Letting r0 and s0 be the values of r and s at the time that the method
-	// is called, this next line is equivalent to:
-	//
-	// if max(r0.Min.X, s0.Min.X) >= min(r0.Max.X, s0.Max.X) || likewiseForY { etc }
-	if r.Empty() {
-		return &Rectangle{}
-	}
-	return r
-}
-
-// Overlaps reports whether r and s have a non-empty intersection.
-func (r *Rectangle) Overlaps(s *Rectangle) bool {
-	return !r.Empty() && !s.Empty() &&
-		r.topCorner.Column < s.bottomCorner.Column && s.topCorner.Column < r.bottomCorner.Column &&
-		r.topCorner.Row < s.bottomCorner.Row && s.topCorner.Row < r.bottomCorner.Row
-}
-
-// In reports whether every point in r is in s.
-func (r *Rectangle) In(s *Rectangle) bool {
-	if r.Empty() {
-		return true
-	}
-	// Note that r.Max is an exclusive bound for r, so that r.In(s)
-	// does not require that r.Max.In(s).
-	return s.topCorner.Column <= r.topCorner.Column && r.bottomCorner.Column <= s.bottomCorner.Column &&
-		s.topCorner.Row <= r.topCorner.Row && r.bottomCorner.Row <= s.bottomCorner.Row
 }
 
 // Resize on a rectangle updates the new size of this object.

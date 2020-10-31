@@ -37,8 +37,8 @@ func UnHashNeg(hash int) (int, int) {
 	return column, row
 }
 
-func NewPosition(column, row int) Position {
-	return Position{
+func NewPosition(column, row int) *Position {
+	return &Position{
 		Row:    row,
 		Column: column,
 		hash:   Hash(column, row),
@@ -55,4 +55,29 @@ func (p *Position) UpdateHash() {
 
 func (p Position) String() string {
 	return "col:" + strconv.Itoa(p.Column) + ", row:" + strconv.Itoa(p.Row)
+}
+
+func Width(p1, p2 *Position) int {
+	return Abs(p1.Column-p2.Column) + 1
+}
+
+func Height(p1, p2 *Position) int {
+	return Abs(p1.Row-p2.Row) + 1
+}
+
+func Center(p1, p2 *Position) *Position {
+	rows := Height(p1, p2)
+	columns := Width(p1, p2)
+	// assuming the caller knows what it's doing (both should be odd)
+	if columns%2 == 1 && rows%2 == 1 { // both are odd - center will be even (except 1,1 which doesn't have a center)
+		return NewPosition(columns>>1, rows>>1)
+	}
+	if columns%2 == 1 && rows%2 == 0 { // cols are odd, rows are even
+		return NewPosition(columns>>1, rows>>1-1)
+	}
+	if columns%2 == 0 && rows%2 == 1 { // cols are even, rows are odd
+		return NewPosition(columns>>1-1, rows>>1)
+	}
+	// worst case, both are even
+	return NewPosition(columns>>1-1, rows>>1-1)
 }

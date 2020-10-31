@@ -420,7 +420,7 @@ func (c *core) resize(w, h int, shutdown bool) {
 	}
 	c.size = &term.Size{Width: w, Height: h}
 	mp := term.NewPosition(w, h)
-	c.maximumPosition = &mp
+	c.maximumPosition = mp
 	c.comm.MakeGoToCache(c.size, term.Hash)
 }
 

@@ -2,24 +2,25 @@ package geom
 
 import (
 	"image"
-	"image/color"
+	imageColor "image/color"
 	"math"
 	"sync"
 
 	"github.com/badu/term"
+	"github.com/badu/term/color"
 )
 
 // LinearGradient defines a Gradient travelling straight at a given angle.
 // The only supported values for the angle are `0.0` (vertical) and `90.0` (horizontal), currently.
 type LinearGradient struct {
-	sync.RWMutex               //
-	position     term.Position // The current position of the Rectangle
-	size         term.Size     // The current size of the Rectangle
-	min          term.Size     // The minimum size this object can be
-	StartColor   color.Color   // The beginning color of the gradient
-	EndColor     color.Color   // The end color of the gradient
-	Angle        float64       // The angle of the gradient (0/180 for vertical; 90/270 for horizontal)
-	Hidden       bool          // Is this object currently hidden
+	sync.RWMutex                //
+	position     *term.Position // The current position of the Rectangle
+	size         *term.Size     // The current size of the Rectangle
+	min          *term.Size     // The minimum size this object can be
+	StartColor   color.Color    // The beginning color of the gradient
+	EndColor     color.Color    // The end color of the gradient
+	Angle        float64        // The angle of the gradient (0/180 for vertical; 90/270 for horizontal)
+	Hidden       bool           // Is this object currently hidden
 }
 
 // Generate calculates an image of the gradient with the specified width and height.
@@ -64,7 +65,7 @@ func (l *LinearGradient) Generate(iw, ih int) image.Image {
 }
 
 // CurrentSize returns the current size of this rectangle object
-func (l *LinearGradient) Size() term.Size {
+func (l *LinearGradient) Size() *term.Size {
 	l.RLock()
 	defer l.RUnlock()
 
@@ -72,7 +73,7 @@ func (l *LinearGradient) Size() term.Size {
 }
 
 // Resize sets a new size for the rectangle object
-func (l *LinearGradient) Resize(size term.Size) {
+func (l *LinearGradient) Resize(size *term.Size) {
 	l.Lock()
 	defer l.Unlock()
 
@@ -80,7 +81,7 @@ func (l *LinearGradient) Resize(size term.Size) {
 }
 
 // CurrentPosition gets the current position of this rectangle object, relative to its children / canvas
-func (l *LinearGradient) Position() term.Position {
+func (l *LinearGradient) Position() *term.Position {
 	l.RLock()
 	defer l.RUnlock()
 
@@ -88,7 +89,7 @@ func (l *LinearGradient) Position() term.Position {
 }
 
 // Move the rectangle object to a new position, relative to its children / canvas
-func (l *LinearGradient) Move(pos term.Position) {
+func (l *LinearGradient) Move(pos *term.Position) {
 	l.Lock()
 	defer l.Unlock()
 
@@ -96,7 +97,7 @@ func (l *LinearGradient) Move(pos term.Position) {
 }
 
 // MinSize returns the specified minimum size, if set, or {1, 1} otherwise
-func (l *LinearGradient) MinSize() term.Size {
+func (l *LinearGradient) MinSize() *term.Size {
 	l.RLock()
 	defer l.RUnlock()
 
@@ -108,7 +109,7 @@ func (l *LinearGradient) MinSize() term.Size {
 }
 
 // SetMinSize specifies the smallest size this object should be
-func (l *LinearGradient) SetMinSize(size term.Size) {
+func (l *LinearGradient) SetMinSize(size *term.Size) {
 	l.Lock()
 	defer l.Unlock()
 
@@ -141,15 +142,15 @@ func (l *LinearGradient) Hide() {
 
 // RadialGradient defines a Gradient travelling radially from a center point outward.
 type RadialGradient struct {
-	sync.RWMutex                //
-	position      term.Position // The current position of the Rectangle
-	size          term.Size     // The current size of the Rectangle
-	min           term.Size     // The minimum size this object can be
-	StartColor    color.Color   // The beginning color of the gradient
-	EndColor      color.Color   // The end color of the gradient
-	CenterOffsetX float64       // The offset of the center for generation of the gradient. This is not a DP measure but relates to the width/height. A value of 0.5 would move the center by the half width/height.
-	CenterOffsetY float64       //
-	Hidden        bool          // Is this object currently hidden
+	sync.RWMutex                 //
+	position      *term.Position // The current position of the Rectangle
+	size          *term.Size     // The current size of the Rectangle
+	min           *term.Size     // The minimum size this object can be
+	StartColor    color.Color    // The beginning color of the gradient
+	EndColor      color.Color    // The end color of the gradient
+	CenterOffsetX float64        // The offset of the center for generation of the gradient. This is not a DP measure but relates to the width/height. A value of 0.5 would move the center by the half width/height.
+	CenterOffsetY float64        //
+	Hidden        bool           // Is this object currently hidden
 }
 
 // Generate calculates an image of the gradient with the specified width and height.
@@ -184,23 +185,21 @@ func (r *RadialGradient) Generate(iw, ih int) image.Image {
 	return computeGradient(generator, iw, ih, r.StartColor, r.EndColor)
 }
 
-func calculatePixel(d float64, startColor, endColor color.Color) color.Color {
+func calculatePixel(d float64, startColor, endColor color.Color) imageColor.Color {
 	// fetch RGBA values
-	aR, aG, aB, aA := startColor.RGBA()
-	bR, bG, bB, bA := endColor.RGBA()
+	aR, aG, aB := color.ToRGB(startColor)
+	bR, bG, bB := color.ToRGB(endColor)
 
 	// Get difference
 	dR := float64(bR) - float64(aR)
 	dG := float64(bG) - float64(aG)
 	dB := float64(bB) - float64(aB)
-	dA := float64(bA) - float64(aA)
 
 	// Apply gradations
-	pixel := &color.RGBA64{
+	pixel := &imageColor.RGBA64{
 		R: uint16(float64(aR) + d*dR),
 		B: uint16(float64(aB) + d*dB),
 		G: uint16(float64(aG) + d*dG),
-		A: uint16(float64(aA) + d*dA),
 	}
 
 	return pixel
@@ -208,14 +207,6 @@ func calculatePixel(d float64, startColor, endColor color.Color) color.Color {
 
 func computeGradient(generator func(x, y float64) float64, w, h int, startColor, endColor color.Color) image.Image {
 	img := image.NewNRGBA(image.Rect(0, 0, w, h))
-
-	if startColor == nil && endColor == nil {
-		return img
-	} else if startColor == nil {
-		startColor = color.Transparent
-	} else if endColor == nil {
-		endColor = color.Transparent
-	}
 
 	for x := 0; x < w; x++ {
 		for y := 0; y < h; y++ {
@@ -255,7 +246,7 @@ func NewVerticalGradient(start color.Color, end color.Color) *LinearGradient {
 }
 
 // CurrentSize returns the current size of this rectangle object
-func (r *RadialGradient) Size() term.Size {
+func (r *RadialGradient) Size() *term.Size {
 	r.RLock()
 	defer r.RUnlock()
 
@@ -263,7 +254,7 @@ func (r *RadialGradient) Size() term.Size {
 }
 
 // Resize sets a new size for the rectangle object
-func (r *RadialGradient) Resize(size term.Size) {
+func (r *RadialGradient) Resize(size *term.Size) {
 	r.Lock()
 	defer r.Unlock()
 
@@ -271,7 +262,7 @@ func (r *RadialGradient) Resize(size term.Size) {
 }
 
 // CurrentPosition gets the current position of this rectangle object, relative to its children / canvas
-func (r *RadialGradient) Position() term.Position {
+func (r *RadialGradient) Position() *term.Position {
 	r.RLock()
 	defer r.RUnlock()
 
@@ -279,7 +270,7 @@ func (r *RadialGradient) Position() term.Position {
 }
 
 // Move the rectangle object to a new position, relative to its children / canvas
-func (r *RadialGradient) Move(pos term.Position) {
+func (r *RadialGradient) Move(pos *term.Position) {
 	r.Lock()
 	defer r.Unlock()
 
@@ -287,7 +278,7 @@ func (r *RadialGradient) Move(pos term.Position) {
 }
 
 // MinSize returns the specified minimum size, if set, or {1, 1} otherwise
-func (r *RadialGradient) MinSize() term.Size {
+func (r *RadialGradient) MinSize() *term.Size {
 	r.RLock()
 	defer r.RUnlock()
 
@@ -299,7 +290,7 @@ func (r *RadialGradient) MinSize() term.Size {
 }
 
 // SetMinSize specifies the smallest size this object should be
-func (r *RadialGradient) SetMinSize(size term.Size) {
+func (r *RadialGradient) SetMinSize(size *term.Size) {
 	r.Lock()
 	defer r.Unlock()
 

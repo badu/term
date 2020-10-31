@@ -7,6 +7,13 @@ Now, thinking about `Rect` : it's just a thicker `Line`, isn't it?
 The only particularity of a `Rect` is the `orientation` : a `Rect` can be organized `vertically`, making it an array of `Row`s - or horizontally, making it an array of `Column`s. 
 A `Grid` is a collection of `Rect', right ? It is only special as it is "flexible", in terms that it should resize it's children to the desired sizes. 
 
+#### Center of a rectangle
+
+|  Cases               | Column Even (e.g:2)   | Column Odd (e.g:3)    |
+|----------------------|-----------------------|-----------------------|
+|  Row Even (e.g:2)    | Center Odd  (0,0)     | Center SemiEven (1,0) |
+|  Row Odd  (e.g:3)    | Center SemiEven (0,1) | Center Even (1,1)     |
+
 #### Page and it's context.Context
 
 When a `Page` gets created, a cancellable `context.Context` should be passed to it, so it can free the collection of `term.Pixel` it orchestrates. 

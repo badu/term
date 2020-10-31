@@ -61,10 +61,24 @@ func (ow *Owners) ForgetFirst() {
 	*ow = o
 }
 
+type children []children
+
+type parents struct {
+	*children
+}
+
+func (c *children) iterate() parents {
+	p := parents{c}
+	if len(*p.children) == 0 {
+		return p
+	}
+	return p.iterate()
+}
+
 // Page
 type Page struct {
 	sync.RWMutex
-	Rectangle
+	children       children
 	engine         term.Engine
 	incomingMouse  chan term.MouseEvent
 	incomingKey    chan term.KeyEvent
@@ -126,7 +140,7 @@ func NewPage(ctx context.Context, opts ...PageOption) (*Page, error) {
 			case se := <-res.incomingResize:
 				log.Printf("resize : %v", se.Size())
 				// TODO : tell only rectangles that have variable size
-				res.Resize(se.Size())
+				//res.Resize(se.Size())
 			}
 		}
 	}()

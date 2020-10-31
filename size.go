@@ -7,22 +7,22 @@ type Size struct {
 }
 
 // NewSize returns a newly allocated Size of the specified dimensions.
-func NewSize(w int, h int) Size {
-	return Size{w, h}
+func NewSize(w int, h int) *Size {
+	return &Size{w, h}
 }
 
 // Add returns a new Size that is the result of increasing the current size by s2 Width and Height.
-func (s Size) Add(s2 Size) Size {
+func (s *Size) Add(s2 *Size) Size {
 	return Size{s.Width + s2.Width, s.Height + s2.Height}
 }
 
 // IsZero returns whether the Size has zero width and zero height.
-func (s Size) IsZero() bool {
+func (s *Size) IsZero() bool {
 	return s.Width == 0 && s.Height == 0
 }
 
 // Max returns a new Size that is the maximum of the current Size and s2.
-func (s Size) Max(s2 Size) Size {
+func (s *Size) Max(s2 Size) *Size {
 	maxW := Max(s.Width, s2.Width)
 	maxH := Max(s.Height, s2.Height)
 
@@ -30,7 +30,7 @@ func (s Size) Max(s2 Size) Size {
 }
 
 // Min returns a new Size that is the minimum of the current Size and s2.
-func (s Size) Min(s2 Size) Size {
+func (s *Size) Min(s2 Size) *Size {
 	minW := Min(s.Width, s2.Width)
 	minH := Min(s.Height, s2.Height)
 
@@ -38,7 +38,7 @@ func (s Size) Min(s2 Size) Size {
 }
 
 // Subtract returns a new Size that is the result of decreasing the current size by s2 Width and Height.
-func (s Size) Subtract(s2 Size) Size {
+func (s *Size) Subtract(s2 Size) Size {
 	return Size{s.Width - s2.Width, s.Height - s2.Height}
 }
 

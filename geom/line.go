@@ -20,7 +20,7 @@ func (l *Line) acquirePositions() {
 	if l.topLeft == nil || l.bottomRight == nil {
 		return
 	}
-	l.positions = make([]term.Position, 0)
+	l.positions = make([]*term.Position, 0)
 
 	leftPoint, rightPoint := l.topLeft, l.bottomRight
 	if leftPoint.Row > rightPoint.Row {
@@ -67,26 +67,26 @@ func WithBottomRight(pos *term.Position) LineOption {
 // Lines are special as they can have a negative width or height to indicate
 // an inverse slope (i.e. slope up vs down).
 type Line struct {
-	positions   []term.Position //
-	topLeft     *term.Position  // The current top-left position of the Line
-	bottomRight *term.Position  // The current bottom right position of the Line
-	hidden      bool            // Is this Line currently hidden
+	positions   []*term.Position //
+	topLeft     *term.Position   // The current top-left position of the Line
+	bottomRight *term.Position   // The current bottom right position of the Line
+	hidden      bool             // Is this Line currently hidden
 }
 
 // Size returns the current size of bounding box for this line object
-func (l *Line) Size() term.Size {
+func (l *Line) Size() *term.Size {
 	return term.NewSize(term.Abs(l.bottomRight.Row-l.topLeft.Row), term.Abs(l.bottomRight.Column-l.topLeft.Column))
 }
 
 // Resize sets a new bottom-right position for the line object and it will then be refreshed.
 func (l *Line) Resize(size term.Size) {
 	newPos := term.NewPosition(l.topLeft.Column+size.Height, l.topLeft.Row+size.Width)
-	l.bottomRight = &newPos
+	l.bottomRight = newPos
 	l.acquirePositions()
 }
 
 // Position gets the current top-left position of this line object, relative to its children / canvas
-func (l *Line) Position() term.Position {
+func (l *Line) Position() *term.Position {
 	return term.NewPosition(term.Min(l.topLeft.Column, l.bottomRight.Column), term.Min(l.topLeft.Row, l.bottomRight.Row))
 }
 
@@ -95,12 +95,12 @@ func (l *Line) Move(pos *term.Position) {
 	size := l.Size()
 	l.topLeft = pos
 	newPos := term.NewPosition(l.topLeft.Column+size.Height, l.topLeft.Row+size.Width)
-	l.bottomRight = &newPos
+	l.bottomRight = newPos
 }
 
 // MinSize for a Line simply returns Size{1, 1} as there is no
 // explicit content
-func (l *Line) MinSize() term.Size {
+func (l *Line) MinSize() *term.Size {
 	return term.NewSize(1, 1)
 }
 

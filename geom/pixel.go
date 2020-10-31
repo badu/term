@@ -29,7 +29,7 @@ func WithForeground(c color.Color) PixelOption {
 }
 
 // WithPosition is required - row is X, column is Y
-func WithPosition(pos term.Position) PixelOption {
+func WithPosition(pos *term.Position) PixelOption {
 	return func(p *px) {
 		pos.UpdateHash()
 		p.pos = pos
@@ -58,7 +58,7 @@ func WithAttrs(m style.Mask) PixelOption {
 }
 
 type px struct {
-	pos           term.Position         // required, for each pixel. default to {-1,-1} and validated in the constructor
+	pos           *term.Position        // required, for each pixel. default to {-1,-1} and validated in the constructor
 	drawCh        chan term.PixelGetter // required, triggers core.drawPixel via setters
 	fgCol         color.Color           // optional, defaults to color.Default
 	bgCol         color.Color           // optional, defaults to color.Default
@@ -260,7 +260,7 @@ func (p *px) SetUnicode(u term.Unicode) {
 // Another note, important : the background and foreground needs to be defaulted to color.Default because engine performs extra steps otherwise. Search core.drawPixel method for `positions "needed" from geom.Pixel`
 func NewPixel(opts ...PixelOption) (term.Pixel, error) {
 	// because composition components will "own" a set of pixels, it's not a good idea to to cache our GoTo []byte here
-	defPos := term.Position{Row: -1, Column: -1}
+	defPos := term.NewPosition(-1, -1)
 	res := &px{
 		pos:     defPos,
 		drawCh:  make(chan term.PixelGetter),
@@ -283,7 +283,7 @@ func NewPixel(opts ...PixelOption) (term.Pixel, error) {
 
 // internal constructor, used mainly by Page
 func newPixel(col, row int) px {
-	defPos := term.Position{Row: row, Column: col}
+	defPos := term.NewPosition(col, row)
 	res := px{
 		pos:     defPos,
 		drawCh:  make(chan term.PixelGetter),

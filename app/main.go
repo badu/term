@@ -42,9 +42,9 @@ func (a *Application) Start(ctx context.Context) {
 
 // AddPage
 func (a *Application) AddPage(p *geom.Page) {
-	pageCtx, cancel := context.WithCancel(a.ctx)
-	a.cancels[p] = cancel
-	geom.WithEngine(pageCtx)
+	// pageCtx, cancel := context.WithCancel(a.ctx)
+	// a.cancels[p] = cancel
+	// geom.WithEngine(pageCtx)
 	a.pages = append(a.pages, *p)
 }
 
