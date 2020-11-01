@@ -427,8 +427,8 @@ func (c *core) resize(w, h int, shutdown bool) {
 // drawPixels - locked inside caller function
 func (c *core) drawPixels(w io.Writer, pixels ...term.PixelGetter) {
 	for _, pixel := range pixels {
-		c.comm.GoTo(w, pixel.PositionHash())                         // first we go to
-		fg, bg, attrs := pixel.FgCol(), pixel.BgCol(), pixel.Attrs() // read pixel colors and attributes
+		c.comm.GoTo(w, pixel.PositionHash()) // first we go to
+		fg, bg, attrs := pixel.Style()       // read pixel colors and attributes
 		if fg == c.cachedFG && bg == c.cachedBG && c.cachedAttrs == attrs {
 			goto cachedStyle // if the previous pixel had the same attributes and colors, we jump to displaying runes
 		}

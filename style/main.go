@@ -19,7 +19,7 @@ import (
 type Style struct {
 	Fg    color.Color
 	Bg    color.Color
-	attrs Mask
+	Attrs Mask
 }
 
 type Option func(s *Style)
@@ -27,7 +27,7 @@ type Option func(s *Style)
 // WithAttrs
 func WithAttrs(mask Mask) Option {
 	return func(s *Style) {
-		s.attrs = mask
+		s.Attrs = mask
 	}
 }
 
@@ -48,49 +48,49 @@ func WithBg(c color.Color) Option {
 // WithBold
 func WithBold(on bool) Option {
 	return func(s *Style) {
-		s.setAttrs(Bold, on)
+		s.mergeAttrs(Bold, on)
 	}
 }
 
 // WithBlink
 func WithBlink(on bool) Option {
 	return func(s *Style) {
-		s.setAttrs(Blink, on)
+		s.mergeAttrs(Blink, on)
 	}
 }
 
 // WithDim
 func WithDim(on bool) Option {
 	return func(s *Style) {
-		s.setAttrs(Dim, on)
+		s.mergeAttrs(Dim, on)
 	}
 }
 
 // WithItalic
 func WithItalic(on bool) Option {
 	return func(s *Style) {
-		s.setAttrs(Italic, on)
+		s.mergeAttrs(Italic, on)
 	}
 }
 
 // WithReverse
 func WithReverse(on bool) Option {
 	return func(s *Style) {
-		s.setAttrs(Reverse, on)
+		s.mergeAttrs(Reverse, on)
 	}
 }
 
 // WithUnderline
 func WithUnderline(on bool) Option {
 	return func(s *Style) {
-		s.setAttrs(Underline, on)
+		s.mergeAttrs(Underline, on)
 	}
 }
 
 // WithStrikeThrough
 func WithStrikeThrough(on bool) Option {
 	return func(s *Style) {
-		s.setAttrs(StrikeThrough, on)
+		s.mergeAttrs(StrikeThrough, on)
 	}
 }
 
@@ -99,12 +99,12 @@ func FromStyle(clone *Style) Option {
 	return func(s *Style) {
 		s.Bg = clone.Bg
 		s.Fg = clone.Bg
-		s.attrs = clone.attrs
+		s.Attrs = clone.Attrs
 	}
 }
 
 func (s Style) IsValid() bool {
-	return s.attrs != Invalid
+	return s.Attrs != Invalid
 }
 
 func NewStyle(opts ...Option) *Style {
@@ -116,16 +116,31 @@ func NewStyle(opts ...Option) *Style {
 }
 
 // Expand breaks a style up, returning the foreground, background, and other attributes.
-func (s *Style) Expand() (color.Color, color.Color, Mask) {
-	return s.Fg, s.Bg, s.attrs
+func (s Style) Expand() (color.Color, color.Color, Mask) {
+	return s.Fg, s.Bg, s.Attrs
 }
 
-func (s *Style) setAttrs(attrs Mask, on bool) {
+func (s *Style) mergeAttrs(attrs Mask, on bool) {
 	if on {
-		s.attrs = s.attrs | attrs
+		s.Attrs = s.Attrs | attrs
 		return
 	}
-	attrs = s.attrs &^ attrs
+	attrs = s.Attrs &^ attrs
+}
+
+func (s *Style) merge(other *Style, except color.Color) {
+	s.mergeAttrs(other.Attrs, true)
+	if other.Fg != except {
+		s.Fg = other.Fg
+	}
+	if other.Bg != except {
+		s.Bg = other.Bg
+	}
+}
+
+// TODO : test
+func (s *Style) Merge(other *Style) {
+	s.merge(other, color.Default)
 }
 
 // Normal returns the style with all attributes disabled.

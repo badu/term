@@ -17,14 +17,14 @@ type PixelOption func(p *px)
 // WithBackground is optional
 func WithBackground(c color.Color) PixelOption {
 	return func(p *px) {
-		p.bgCol = c
+		p.st.Bg = c
 	}
 }
 
 // WithForeground is optional
 func WithForeground(c color.Color) PixelOption {
 	return func(p *px) {
-		p.fgCol = c
+		p.st.Fg = c
 	}
 }
 
@@ -53,16 +53,14 @@ func WithUnicode(u term.Unicode) PixelOption {
 // WithAttrs is optional
 func WithAttrs(m style.Mask) PixelOption {
 	return func(p *px) {
-		p.attrs = m
+		p.st.Attrs = m
 	}
 }
 
 type px struct {
 	pos           *term.Position        // required, for each pixel. default to {-1,-1} and validated in the constructor
 	drawCh        chan term.PixelGetter // required, triggers core.drawPixel via setters
-	fgCol         color.Color           // optional, defaults to color.Default
-	bgCol         color.Color           // optional, defaults to color.Default
-	attrs         style.Mask            // optional, defaults to style.None
+	st            style.Style           //
 	content       rune                  // optional, defaults to encoding.Space
 	unicode       *term.Unicode         // optional, no default (don't waste memory)
 	width         int                   // defaults to 1 if encoding.Space
@@ -71,12 +69,17 @@ type px struct {
 
 // BgCol
 func (p *px) BgCol() color.Color {
-	return p.bgCol
+	return p.st.Bg
 }
 
 // FgCol
 func (p *px) FgCol() color.Color {
-	return p.fgCol
+	return p.st.Fg
+}
+
+// Style
+func (p *px) Style() (color.Color, color.Color, style.Mask) {
+	return p.st.Fg, p.st.Bg, p.st.Attrs
 }
 
 // HasUnicode
@@ -96,7 +99,7 @@ func (p *px) Rune() rune {
 
 // Attrs
 func (p *px) Attrs() style.Mask {
-	return p.attrs
+	return p.st.Attrs
 }
 
 // Width - usually 1
@@ -119,11 +122,11 @@ func (p *px) DrawCh() chan term.PixelGetter {
 
 // SetFgBg
 func (p *px) SetFgBg(fg, bg color.Color) {
-	if p.bgCol == bg && p.fgCol == fg {
+	if p.st.Bg == bg && p.st.Fg == fg {
 		return
 	}
-	p.bgCol = bg
-	p.fgCol = fg
+	p.st.Bg = bg
+	p.st.Fg = fg
 	if p.wasRegistered {
 		p.drawCh <- p // if not registered, it will cause blocking
 	}
@@ -131,12 +134,12 @@ func (p *px) SetFgBg(fg, bg color.Color) {
 
 // Set - sets rune, background and foreground
 func (p *px) Set(r rune, fg, bg color.Color) {
-	if p.bgCol == bg && p.fgCol == fg && p.content == r {
+	if p.st.Bg == bg && p.st.Fg == fg && p.content == r {
 		return
 	}
 	p.content = r
-	p.bgCol = bg
-	p.fgCol = fg
+	p.st.Bg = bg
+	p.st.Fg = fg
 	p.width = 1
 	if p.wasRegistered {
 		p.drawCh <- p // if not registered, it will cause blocking
@@ -164,14 +167,14 @@ func (p *px) SetAll(bg, fg color.Color, m style.Mask, r rune, u term.Unicode) {
 			equal = false
 		}
 	}
-	if p.bgCol == bg && p.fgCol == fg && p.content == r && equal {
+	if p.st.Bg == bg && p.st.Fg == fg && p.content == r && equal {
 		return
 	}
-	p.bgCol = bg
-	p.fgCol = fg
+	p.st.Bg = bg
+	p.st.Fg = fg
 	p.content = r
 	p.unicode = &u
-	p.attrs = m
+	p.st.Attrs = m
 	if p.wasRegistered {
 		p.drawCh <- p // if not registered, it will cause blocking
 	}
@@ -179,10 +182,10 @@ func (p *px) SetAll(bg, fg color.Color, m style.Mask, r rune, u term.Unicode) {
 
 // SetAttrs - sets mask and dispatches changes
 func (p *px) SetAttrs(m style.Mask) {
-	if p.attrs == m {
+	if p.st.Attrs == m {
 		return
 	}
-	p.attrs = m
+	p.st.Attrs = m
 	if p.wasRegistered {
 		p.drawCh <- p // if not registered, it will cause blocking
 	}
@@ -190,10 +193,10 @@ func (p *px) SetAttrs(m style.Mask) {
 
 // SetBackground - sets background color and dispatches changes
 func (p *px) SetBackground(c color.Color) {
-	if p.bgCol == c {
+	if p.st.Bg == c {
 		return
 	}
-	p.bgCol = c
+	p.st.Bg = c
 	if p.wasRegistered {
 		p.drawCh <- p // if not registered, it will cause blocking
 	}
@@ -201,10 +204,10 @@ func (p *px) SetBackground(c color.Color) {
 
 // SetForeground - sets foreground color and dispatches changes
 func (p *px) SetForeground(c color.Color) {
-	if p.fgCol == c {
+	if p.st.Fg == c {
 		return
 	}
-	p.fgCol = c
+	p.st.Fg = c
 	if p.wasRegistered {
 		p.drawCh <- p // if not registered, it will cause blocking
 	}
@@ -261,12 +264,11 @@ func (p *px) SetUnicode(u term.Unicode) {
 func NewPixel(opts ...PixelOption) (term.Pixel, error) {
 	// because composition components will "own" a set of pixels, it's not a good idea to to cache our GoTo []byte here
 	defPos := term.NewPosition(-1, -1)
+	defStyle := style.NewStyle(style.WithBg(color.Default), style.WithFg(color.Default), style.WithAttrs(style.None))
 	res := &px{
 		pos:     defPos,
 		drawCh:  make(chan term.PixelGetter),
-		bgCol:   color.Default,  // default has color Default
-		fgCol:   color.Default,  // default has color Default
-		attrs:   style.None,     // default has no style
+		st:      *defStyle,
 		content: encoding.Space, // it's just a space char
 	}
 	// apply functional options
@@ -284,12 +286,11 @@ func NewPixel(opts ...PixelOption) (term.Pixel, error) {
 // internal constructor, used mainly by Page
 func newPixel(col, row int) px {
 	defPos := term.NewPosition(col, row)
+	defStyle := style.NewStyle(style.WithBg(color.Default), style.WithFg(color.Default), style.WithAttrs(style.None))
 	res := px{
 		pos:     defPos,
 		drawCh:  make(chan term.PixelGetter),
-		bgCol:   color.Default,  // default has color Default
-		fgCol:   color.Default,  // default has color Default
-		attrs:   style.None,     // default has no style
+		st:      *defStyle,
 		content: encoding.Space, // it's just a space char
 	}
 	return res

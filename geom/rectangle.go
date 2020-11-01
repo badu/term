@@ -30,14 +30,14 @@ type RectangleOption func(r *Rectangle)
 // WithBackgroundColor
 func WithBackgroundColor(c color.Color) RectangleOption {
 	return func(r *Rectangle) {
-		r.bg = c
+		r.st.Bg = c
 	}
 }
 
 // WithForegroundColor
 func WithForegroundColor(c color.Color) RectangleOption {
 	return func(r *Rectangle) {
-		r.fg = c
+		r.st.Fg = c
 	}
 }
 
@@ -80,11 +80,11 @@ func WithMinSize(size *term.Size) RectangleOption {
 func WithChildren(children ...*Rectangle) RectangleOption {
 	return func(r *Rectangle) {
 		for _, child := range children {
-			if child.bg == color.Default {
-				child.bg = r.bg // inherit background color
+			if child.st.Bg == color.Default {
+				child.st.Bg = r.st.Bg // inherit background color
 			}
-			if child.fg == color.Default {
-				child.fg = r.fg // inherit foreground color
+			if child.st.Fg == color.Default {
+				child.st.Fg = r.st.Fg // inherit foreground color
 			}
 			wasAlreadyAddedToChildren := false
 			if child.width != nil {
@@ -148,8 +148,7 @@ type Rectangle struct {
 	bottomCorner   *term.Position     // The current top corner of the Rectangle
 	aligned        style.Alignment    // alignment. Default is style.Begin (topCorner)
 	orientation    style.Orientation  // orientation dictates pixel slices above (rows or cols). Default orientation is style.Vertical
-	fg             color.Color        // The rectangle fill color
-	bg             color.Color        // The rectangle stroke color
+	st             style.Style        //
 	died           chan struct{}      // Channel for killing (context.Done)
 	pixelAskCh     chan term.Position // Channel for asking pixels
 	pixelReleaseCh chan term.Position // Channel for releasing pixels
@@ -163,12 +162,12 @@ type Rectangle struct {
 // TODO : thinking maybe this should be a private constructor. Ask Page to give you a Rectangle and it will give it already populated and ready to use. For now (testing purposes), I'll leave it as it is.
 // NewRectangle returns a new Rectangle instance
 func NewRectangle(ctx context.Context, opts ...RectangleOption) (*Rectangle, error) {
+	defStyle := style.NewStyle(style.WithBg(color.Default), style.WithFg(color.Default), style.WithAttrs(style.None))
 	res := &Rectangle{
 		id:             getNextRectId(), // TODO : use some form of hash, maybe ???
 		orientation:    style.Vertical,  // default orientation
 		aligned:        style.Begin,     // aligned top left
-		fg:             color.Default,   // default colors
-		bg:             color.Default,
+		st:             *defStyle,
 		pixelAskCh:     make(chan term.Position),
 		pixelReleaseCh: make(chan term.Position),
 		pixelReceiveCh: make(chan px),
@@ -343,12 +342,12 @@ func (r *Rectangle) Hide() {
 
 // Bg
 func (r *Rectangle) Bg() color.Color {
-	return r.bg
+	return r.st.Bg
 }
 
 // Fg
 func (r *Rectangle) Fg() color.Color {
-	return r.fg
+	return r.st.Fg
 }
 
 // Top

@@ -136,15 +136,13 @@ type Unicode []rune
 
 // PixelGetter is the complete interface (both setter and getter)
 type PixelGetter interface {
-	DrawCh() chan PixelGetter // channel which tells core that pixel needs drawing
-	PositionHash() int        // position (x,y) where is pixel is placed
-	BgCol() color.Color       // background color, if any
-	FgCol() color.Color       // foreground color, if any
-	Attrs() style.Mask        // the attributes, if any (bold, italic, etc)
-	Rune() rune               // the rune pixel contains
-	Width() int               // the width of the rune, usually is 1, but unicode adds more to it
-	HasUnicode() bool         // helper for not reading unicode everytime
-	Unicode() *Unicode        // if unicode, it adds to the rune
+	DrawCh() chan PixelGetter                      // channel which tells core that pixel needs drawing
+	PositionHash() int                             // position (x,y) where is pixel is placed
+	Style() (color.Color, color.Color, style.Mask) // style (background and foreground colors, attributes)
+	Rune() rune                                    // the rune pixel contains
+	Width() int                                    // the width of the rune, usually is 1, but unicode adds more to it
+	HasUnicode() bool                              // helper for not reading unicode everytime
+	Unicode() *Unicode                             // if unicode, it adds to the rune
 }
 
 // PixelSetter is the complete interface (both setter and getter)

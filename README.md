@@ -95,9 +95,7 @@ The `Pixel` interface (includes `PixelGetter` and `PixelSetter` interfaces):
 
 * `DrawCh() chan Pixel` - the channel used by `core` to listen redraw request.
 * `PositionHash() int` - the position hash of the `Pixel`.
-* `BgCol() color.Color` - background color of the `Pixel`.
-* `FgCol() color.Color` - foreground color of the `Pixel`.
-* `Attrs() style.Mask` - `Pixel` `style.Mask`.
+* `Style() (color.Color, color.Color, style.Mask)` - colors and attributes of the `Pixel`, expanded as foreground, background and attributes
 * `Rune() rune` - rune.
 * `Width() int` - rune and `Unicode` width.
 * `HasUnicode() bool ` - exposes if `Unicode` is a nil pointer or not.
