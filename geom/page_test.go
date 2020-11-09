@@ -31,12 +31,14 @@ func TestMoveToFront(t *testing.T) {
 	o.MoveToFront(r)
 	t.Logf("size : %d", len(o))
 	for _, r := range o {
-		t.Logf("rect %d : %#v", r.Id(), r)
+		//t.Logf("rect %d : %#v", r.Id(), r)
+		_ = r
 	}
 	o.ForgetFirst()
 	t.Logf("size : %d", len(o))
 	for _, r := range o {
-		t.Logf("rect %d : %#v", r.Id(), r)
+		//t.Logf("rect %d : %#v", r.Id(), r)
+		_ = r
 	}
 	r3, err := geom.NewRectangle(ctx, geom.WithTopCorner(20, 20), geom.WithBottomCorner(22, 22), testAcquisitionChan())
 	if err != nil {
@@ -46,7 +48,8 @@ func TestMoveToFront(t *testing.T) {
 	o.MoveToFront(r3)
 	t.Logf("size : %d", len(o))
 	for _, r := range o {
-		t.Logf("rect %d : %#v", r.Id(), r)
+		//t.Logf("rect %d : %#v", r.Id(), r)
+		_ = r
 	}
 	cancel()
 }
@@ -55,7 +58,7 @@ func TestRectangleWithPage(t *testing.T) {
 	initLog.InitLogger()
 	log.Print("starting test")
 	ctx, cancel := context.WithCancel(context.Background())
-	fakeEngine := NewFakeEngine(t, 132, 43)
+	fakeEngine := NewFakeEngine(t, ctx, 132, 43)
 	pageCtx, pageCancel := context.WithCancel(ctx)
 	p, err := geom.NewPage(pageCtx, geom.WithEngine(fakeEngine))
 	if err != nil {

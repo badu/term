@@ -99,6 +99,7 @@ type core struct {
 	cachedBG        color.Color          //
 	cachedFG        color.Color          //
 	cachedAttrs     style.Mask           //
+	ctx             context.Context      //
 	hasTrueColor    bool                 // as the name says
 	canSetRGB       bool                 // true if len(comm.Term.SetFgRGB) > 0
 	canSetBgFg      bool                 // true if len(comm.Term.SetFgBg) > 0
@@ -155,17 +156,18 @@ func NewCore(termEnv string, options ...Option) (term.Engine, error) {
 		o(res)
 	}
 
-	// creating dispatchers for key and mouse
-	res.mouseDispatcher, err = mouse.NewEventDispatcher(
-		mouse.WithTerminalInfo(ti),
-		mouse.WithResizeDispatcher(res),
-		mouse.WithSwitchChannel(res.mouseSwitch),
-	)
-	if err != nil {
-		if Debug {
-			log.Printf("error creating mouse dispatcher : %v", err)
+	if res.comm.HasMouse {
+		// creating dispatchers for key and mouse
+		res.mouseDispatcher, err = mouse.NewEventDispatcher(
+			mouse.WithTerminalInfo(ti),
+			mouse.WithSwitchChannel(res.mouseSwitch),
+		)
+		if err != nil {
+			if Debug {
+				log.Printf("error creating mouse dispatcher : %v", err)
+			}
+			return nil, err
 		}
-		return nil, err
 	}
 
 	res.keyDispatcher, err = key.NewEventDispatcher(key.WithTerminalInfo(ti))
@@ -186,6 +188,8 @@ func (c *core) Start(ctx context.Context) error {
 		c.Lock()
 		defer c.Unlock()
 
+		c.ctx = ctx
+
 		if err = c.internalStart(); err != nil {
 			if Debug {
 				log.Printf("error while internal starting : %v", err)
@@ -196,6 +200,7 @@ func (c *core) Start(ctx context.Context) error {
 		c.lifeCycle(ctx) // mounting context cancel listener
 		c.keyDispatcher.LifeCycle(ctx)
 		if c.comm.HasMouse { // if we have mouse support
+			c.Register(c.mouseDispatcher) // register resize listening
 			c.mouseDispatcher.LifeCycle(ctx)
 			c.mouseDispatcher.Enable()
 		}

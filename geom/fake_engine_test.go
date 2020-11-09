@@ -24,15 +24,20 @@ func (c *mouseChannels) delete(idx int) {
 
 type FakeMouseDispatcher struct {
 	t         *testing.T
+	ctx       context.Context
 	receivers mouseChannels
 }
 
-func (e *FakeMouseDispatcher) Register(r term.MouseListener) {
+func (e *FakeMouseDispatcher) Register(l term.MouseListener) {
+	if e.ctx == nil {
+		e.t.Error("context not set : cannot listen context.Done()")
+		return
+	}
 	// check against double registration
 	alreadyRegistered := false
 	for _, ch := range e.receivers {
 		// Two channel values are considered equal if they originated from the same make call (meaning they refer to the same channel value in memory).
-		if ch == r.MouseListen() {
+		if ch == l.MouseListen() {
 			alreadyRegistered = true
 			break
 		}
@@ -41,17 +46,22 @@ func (e *FakeMouseDispatcher) Register(r term.MouseListener) {
 		return
 	}
 	// we're fine, lets register it
-	e.receivers = append(e.receivers, r.MouseListen())
+	e.receivers = append(e.receivers, l.MouseListen())
 	// mounting a go routine to listen bye-bye life
 	go func() {
-		// wait for death announcement
-		<-r.DyingChan()
-		// now lookup for that very channel and forget it
-		for idx, ch := range e.receivers {
-			// Two channel values are considered equal if they originated from the same make call (meaning they refer to the same channel value in memory).
-			if ch == r.MouseListen() {
-				e.receivers.delete(idx)
-				break
+		select {
+		case <-e.ctx.Done():
+			e.t.Log("[fake mouse dispatcher] context died : existing death listener")
+			return
+		case <-l.DyingChan(): // wait for death announcement
+			e.t.Log("component died")
+			// now lookup for that very channel and forget it
+			for idx, ch := range e.receivers {
+				// Two channel values are considered equal if they originated from the same make call (meaning they refer to the same channel value in memory).
+				if ch == l.MouseListen() {
+					e.receivers.delete(idx)
+					break
+				}
 			}
 		}
 	}()
@@ -72,6 +82,7 @@ func (e *FakeMouseDispatcher) Dispatch(col, row int, button term.ButtonMask, mod
 
 type FakeKeyDispatcher struct {
 	t         *testing.T
+	ctx       context.Context
 	receivers keyChannels
 }
 
@@ -88,6 +99,10 @@ func (c *keyChannels) delete(idx int) {
 }
 
 func (e *FakeKeyDispatcher) Register(l term.KeyListener) {
+	if e.ctx == nil {
+		e.t.Error("context not set : cannot listen context.Done()")
+		return
+	}
 	// check against double registration
 	alreadyRegistered := false
 	for _, ch := range e.receivers {
@@ -104,14 +119,19 @@ func (e *FakeKeyDispatcher) Register(l term.KeyListener) {
 	e.receivers = append(e.receivers, l.KeyListen())
 	// mounting a go routine to listen bye-bye life
 	go func() {
-		// wait for death announcement
-		<-l.DyingChan()
-		// now lookup for that very channel and forget it
-		for idx, ch := range e.receivers {
-			// Two channel values are considered equal if they originated from the same make call (meaning they refer to the same channel value in memory).
-			if ch == l.KeyListen() {
-				e.receivers.delete(idx)
-				break
+		select {
+		case <-e.ctx.Done():
+			e.t.Log("[fake key dispatcher] context died : existing death listener")
+			return
+		case <-l.DyingChan(): // wait for death announcement
+			e.t.Log("component died")
+			// now lookup for that very channel and forget it
+			for idx, ch := range e.receivers {
+				// Two channel values are considered equal if they originated from the same make call (meaning they refer to the same channel value in memory).
+				if ch == l.KeyListen() {
+					e.receivers.delete(idx)
+					break
+				}
 			}
 		}
 	}()
@@ -141,11 +161,16 @@ func (c *resizeChannels) delete(idx int) {
 
 type FakeResizeDispatcher struct {
 	t         *testing.T
+	ctx       context.Context
 	receivers resizeChannels
 }
 
 func (e *FakeResizeDispatcher) DyingChan() chan struct{} { return nil }
 func (e *FakeResizeDispatcher) Register(l term.ResizeListener) {
+	if e.ctx == nil {
+		e.t.Error("context not set : cannot listen context.Done()")
+		return
+	}
 	// check against double registration
 	alreadyRegistered := false
 	for _, ch := range e.receivers {
@@ -162,20 +187,26 @@ func (e *FakeResizeDispatcher) Register(l term.ResizeListener) {
 	e.receivers = append(e.receivers, l.ResizeListen())
 	// mounting a go routine to listen bye-bye life
 	go func() {
-		// wait for death announcement
-		<-l.DyingChan()
-		// now lookup for that very channel and forget it
-		for idx, ch := range e.receivers {
-			// Two channel values are considered equal if they originated from the same make call (meaning they refer to the same channel value in memory).
-			if ch == l.ResizeListen() {
-				e.receivers.delete(idx)
-				break
+		select {
+		case <-e.ctx.Done():
+			e.t.Log("[fake resize dispatcher] context died : existing death listener")
+			return
+		case <-l.DyingChan(): // wait for death announcement
+			e.t.Log("component died")
+			// now lookup for that very channel and forget it
+			for idx, ch := range e.receivers {
+				// Two channel values are considered equal if they originated from the same make call (meaning they refer to the same channel value in memory).
+				if ch == l.ResizeListen() {
+					e.receivers.delete(idx)
+					break
+				}
 			}
 		}
 	}()
 }
 func (e *FakeResizeDispatcher) Dispatch(newCols, newRows int) {
 	ev := core.NewResizeEvent(newCols, newRows)
+	e.t.Logf("dispatching new size %04d x %04d (cols x rows) to %d receivers", newCols, newRows, len(e.receivers))
 	for _, cons := range e.receivers {
 		cons <- ev
 	}
@@ -190,14 +221,14 @@ type FakeEngine struct {
 	RD            *FakeResizeDispatcher
 }
 
-func NewFakeEngine(t *testing.T, cols, rows int) *FakeEngine {
+func NewFakeEngine(t *testing.T, ctx context.Context, cols, rows int) *FakeEngine {
 	return &FakeEngine{
 		t:       t,
 		Columns: cols,
 		Rows:    rows,
-		MD:      &FakeMouseDispatcher{t: t},
-		KD:      &FakeKeyDispatcher{t: t},
-		RD:      &FakeResizeDispatcher{t: t},
+		MD:      &FakeMouseDispatcher{t: t, ctx: ctx},
+		KD:      &FakeKeyDispatcher{t: t, ctx: ctx},
+		RD:      &FakeResizeDispatcher{t: t, ctx: ctx},
 	}
 }
 

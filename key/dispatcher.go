@@ -47,10 +47,11 @@ type eventDispatcher struct {
 	keyTimerDuration time.Duration         //
 	keyExpire        time.Time             //
 	decoder          transform.Transformer //
-	escaped          bool                  //
 	died             chan struct{}         // this is a buffered channel of size one
 	receivers        channels              // a slice of channels, on which our listeners will receive those events
 	finalizer        Finalizer             // if a finalizer is provided, it will be called before shutdown
+	ctx              context.Context       //
+	escaped          bool                  //
 }
 
 // WithFinalizer provides a way of calling a function upon dispatcher death
@@ -95,8 +96,9 @@ func NewEventDispatcher(opts ...Option) (term.KeyDispatcher, error) {
 
 // LifeCycle implementation of term.KeyDispatcher, called from core
 func (d *eventDispatcher) LifeCycle(ctx context.Context) {
+	d.ctx = ctx
 	// mount lifecycle - listens for chunks of []byte coming via inputCh, analyses them and builds key events
-	d.lifeCycle(ctx)
+	d.lifeCycle()
 }
 
 // DyingChan implementation of term.Death interface, listened in core for waiting graceful shutdown
@@ -111,6 +113,12 @@ func (d *eventDispatcher) InChan() chan []byte {
 
 // Register is registering receivers
 func (d *eventDispatcher) Register(r term.KeyListener) {
+	if d.ctx == nil {
+		if Debug {
+			log.Fatal("context not set : cannot listen context.Done()")
+		}
+		return
+	}
 	// check against double registration
 	alreadyRegistered := false
 	for _, ch := range d.receivers {
@@ -438,7 +446,7 @@ func (d *eventDispatcher) scanInput(buf *bytes.Buffer, expire bool) error {
 }
 
 // lifeCycle starts a number of goroutines, see comments below
-func (d *eventDispatcher) lifeCycle(ctx context.Context) {
+func (d *eventDispatcher) lifeCycle() {
 	d.Once.Do(
 		func() {
 			// input listener routine
@@ -493,7 +501,7 @@ func (d *eventDispatcher) lifeCycle(ctx context.Context) {
 						}
 					}
 				}
-			}(ctx)
+			}(d.ctx)
 		},
 	)
 }

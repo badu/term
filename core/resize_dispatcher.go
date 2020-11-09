@@ -177,7 +177,12 @@ func (c *core) lifeCycle(ctx context.Context) {
 func (c *core) Register(r term.ResizeListener) {
 	c.Lock()
 	defer c.Unlock()
-
+	if c.ctx == nil {
+		if Debug {
+			log.Fatal("context not set : cannot listen context.Done()")
+		}
+		return
+	}
 	// check against double registration
 	alreadyRegistered := false
 	for _, ch := range c.receivers {
@@ -203,14 +208,20 @@ func (c *core) Register(r term.ResizeListener) {
 	c.receivers = append(c.receivers, r.ResizeListen())
 	// mounting a go routine to listen bye-bye when the listener's context get cancelled
 	go func() {
-		// wait for death announcement
-		<-r.DyingChan()
-		// now lookup for that very channel and forget it
-		for idx, ch := range c.receivers {
-			// Two channel values are considered equal if they originated from the same make call (meaning they refer to the same channel value in memory).
-			if ch == r.ResizeListen() {
-				c.receivers.delete(idx)
-				break
+		select {
+		case <-c.ctx.Done():
+			if Debug {
+				log.Println("[core] context is done. Existing death listening routine in Register")
+			}
+			return
+		case <-r.DyingChan():
+			// now lookup for that very channel and forget it
+			for idx, ch := range c.receivers {
+				// Two channel values are considered equal if they originated from the same make call (meaning they refer to the same channel value in memory).
+				if ch == r.ResizeListen() {
+					c.receivers.delete(idx)
+					break
+				}
 			}
 		}
 	}()

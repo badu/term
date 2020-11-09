@@ -61,30 +61,16 @@ func (ow *Owners) ForgetFirst() {
 	*ow = o
 }
 
-type children []children
-
-type parents struct {
-	*children
-}
-
-func (c *children) iterate() parents {
-	p := parents{c}
-	if len(*p.children) == 0 {
-		return p
-	}
-	return p.iterate()
-}
-
 // Page
 type Page struct {
 	sync.RWMutex
-	children       children
+	ctx            context.Context
+	rectangles     Tree
 	engine         term.Engine
 	incomingMouse  chan term.MouseEvent
 	incomingKey    chan term.KeyEvent
 	incomingResize chan term.ResizeEvent
 	died           chan struct{}
-	pxs            map[int]px     // map[position_hash]pixel
 	owners         map[int]Owners // map[position_hash]Owners
 	hidden         bool
 }
@@ -101,11 +87,11 @@ func WithEngine(engine term.Engine) PageOption {
 // NewPage
 func NewPage(ctx context.Context, opts ...PageOption) (*Page, error) {
 	res := &Page{
+		ctx:            ctx,
 		died:           make(chan struct{}),
 		incomingMouse:  make(chan term.MouseEvent),
 		incomingKey:    make(chan term.KeyEvent),
 		incomingResize: make(chan term.ResizeEvent),
-		pxs:            make(map[int]px),
 		owners:         make(map[int]Owners),
 	}
 	for _, opt := range opts {
@@ -118,7 +104,6 @@ func NewPage(ctx context.Context, opts ...PageOption) (*Page, error) {
 	res.engine.ResizeDispatcher().Register(res)
 	res.engine.MouseDispatcher().Register(res)
 	res.engine.KeyDispatcher().Register(res)
-	res.createPixels()
 	go func() {
 		for {
 			select {
@@ -151,21 +136,6 @@ func (p *Page) pixels() []term.PixelGetter {
 	p.RLock()
 	defer p.RUnlock()
 	return nil
-}
-
-func (p *Page) createPixels() {
-	p.Lock()
-	defer p.Unlock()
-	var pixels []term.PixelGetter
-	w, h := p.engine.Size().Width, p.engine.Size().Height
-	for col := 0; col < w; col++ {
-		for row := 0; row < h; row++ {
-			px := newPixel(col, row)
-			p.pxs[px.PositionHash()] = px
-			pixels = append(pixels, &px)
-		}
-	}
-	p.engine.ActivePixels(pixels)
 }
 
 func (p *Page) Shutdown() {

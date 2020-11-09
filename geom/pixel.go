@@ -57,6 +57,9 @@ func WithAttrs(m style.Mask) PixelOption {
 	}
 }
 
+// Cell
+type Cell = px
+
 type px struct {
 	pos           *term.Position        // required, for each pixel. default to {-1,-1} and validated in the constructor
 	drawCh        chan term.PixelGetter // required, triggers core.drawPixel via setters

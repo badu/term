@@ -42,13 +42,6 @@ func WithFinalizer(c Finalizer) Option {
 	}
 }
 
-// WithResizeDispatcher core self register for resize events
-func WithResizeDispatcher(e term.ResizeDispatcher) Option {
-	return func(l *eventDispatcher) {
-		e.Register(l)
-	}
-}
-
 // WithSwitchChannel for transmitting enable / disable mouse requests
 func WithSwitchChannel(ch chan bool) Option {
 	return func(e *eventDispatcher) {
@@ -69,6 +62,7 @@ type eventDispatcher struct {
 	switchCh   chan bool             // provided by core to switch enable / disable
 	receivers  channels              // We need a slice of channels, on which our listeners will receive those events
 	finalizer  Finalizer             // Yes, we have callback and we could reuse it, but we will affect readability doing so
+	ctx        context.Context       //
 	hasMouse   bool                  // set by WithTerminalInfo
 }
 
@@ -99,8 +93,9 @@ func NewEventDispatcher(options ...Option) (term.MouseDispatcher, error) {
 
 // LifeCycle implementation of term.MouseDispatcher interface, called from core
 func (e *eventDispatcher) LifeCycle(ctx context.Context) {
+	e.ctx = ctx
 	// mount lifecycle - listens for chunks of []byte coming via inputCh, analyses them and builds mouse events
-	e.lifeCycle(ctx)
+	e.lifeCycle()
 }
 
 // DyingChan implementation of term.Death interface, listened in core for waiting graceful shutdown
@@ -115,6 +110,12 @@ func (e *eventDispatcher) InChan() chan []byte {
 
 // Register - implementation of term.MouseDispatcher interface - is registering receivers
 func (e *eventDispatcher) Register(r term.MouseListener) {
+	if e.ctx == nil {
+		if Debug {
+			log.Fatal("context not set : cannot listen context.Done()")
+		}
+		return
+	}
 	// check against double registration
 	alreadyRegistered := false
 	for _, ch := range e.receivers {
@@ -438,7 +439,7 @@ func (e *eventDispatcher) readXTerm(buf *bytes.Buffer) (bool, error) {
 }
 
 // lifeCycle listens for context done or incoming input from *os.File
-func (e *eventDispatcher) lifeCycle(ctx context.Context) {
+func (e *eventDispatcher) lifeCycle() {
 	e.Once.Do(
 		func() {
 			// input listener into a goroutine
@@ -466,7 +467,7 @@ func (e *eventDispatcher) lifeCycle(ctx context.Context) {
 						}
 					}
 				}
-			}(ctx)
+			}(e.ctx)
 		},
 	)
 }
