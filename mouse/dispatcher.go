@@ -74,7 +74,7 @@ func NewEventDispatcher(options ...Option) (term.MouseDispatcher, error) {
 		receivers: make(channels, 0),           // channels that will receive any event is produced here
 		inputCh:   make(chan []byte),           // channel for listening input, so we can build events
 		resizeCh:  make(chan term.ResizeEvent), // channel for listening resize events, so we can clip mouse coordinates
-		size:      &term.Size{Width: 0, Height: 0},
+		size:      &term.Size{Columns: 0, Rows: 0},
 	}
 
 	for _, o := range options {
@@ -230,7 +230,7 @@ func (e *eventDispatcher) buildMouseEvent(x, y, btn int) {
 
 	// Some terminals will report mouse coordinates outside the screen, especially with click-drag events.
 	// Clip the coordinates to the screen in that case.
-	x, y = clip(x, y, e.size.Width, e.size.Height)
+	x, y = clip(x, y, e.size.Columns, e.size.Rows)
 	ev := NewEvent(x, y, button, mod) // one event for everyone
 	// send term.MouseEvent it to receivers
 	for _, cons := range e.receivers {
@@ -456,7 +456,7 @@ func (e *eventDispatcher) lifeCycle() {
 					case ev := <-e.resizeCh:
 						e.size = ev.Size()
 						if Debug {
-							log.Printf("resized : cols : %d lines : %d", e.size.Width, e.size.Height)
+							log.Printf("resized : cols : %d lines : %d", e.size.Columns, e.size.Rows)
 						}
 					case chunk := <-e.inputCh:
 						buf.Write(chunk)

@@ -28,9 +28,9 @@ func getNextRectId() int {
 type RectangleOption func(r *Rectangle)
 
 // WithCore
-func WithCore(engine term.ResizeDispatcher) RectangleOption {
+func WithCore(engine term.Engine) RectangleOption {
 	return func(r *Rectangle) {
-		r.resizeDispatcher = engine
+		r.engine = engine
 	}
 }
 
@@ -175,27 +175,21 @@ type Window = Rectangle
 
 // Rectangle describes a colored rectangle primitive
 type Rectangle struct {
-	id               int                   //
-	pxs              map[int]px            // map[position_hash]pixel
-	pixels           []term.PixelGetter    //
-	rows             [][]px                // when organized by rows
-	cols             [][]px                // when organized by cols
-	children         []*Rectangle          // children Rectangles, used for variable sizing // TODO : mount death listener for children
-	topCorner        *term.Position        // The current top corner of the Rectangle
-	bottomCorner     *term.Position        // The current top corner of the Rectangle
-	aligned          style.Alignment       // alignment. Default is style.Begin (topCorner)
-	orientation      style.Orientation     // orientation dictates pixel slices above (rows or cols). Default orientation is style.Vertical
-	st               style.Style           // rectangle style, for inheritance
-	died             chan struct{}         // Channel for killing (context.Done)
-	pixelAskCh       chan term.Position    // Channel for asking pixels
-	pixelReleaseCh   chan term.Position    // Channel for releasing pixels
-	pixelReceiveCh   chan px               // Channel for receiving pixels
-	resizeCh         chan term.ResizeEvent // channel for listening resize events, so we can clip our coordinates
-	width            *int                  // width in percents, pointer indicates is optional
-	height           *int                  // height in percents, pointer indicates is optional
-	min              *term.Size            // The minimum size this object can be. Note that this can exist in the same time with width/height in percents // TODO : check new size (%) is not smaller than min allowed size
-	hidden           bool                  // Is this object currently hidden
-	resizeDispatcher term.ResizeDispatcher // listen resize events
+	root
+	id             int                   //
+	children       []*Rectangle          // children Rectangles, used for variable sizing // TODO : mount death listener for children
+	aligned        style.Alignment       // alignment. Default is style.Begin (topCorner)
+	st             style.Style           // rectangle style, for inheritance
+	died           chan struct{}         // Channel for killing (context.Done)
+	pixelAskCh     chan term.Position    // Channel for asking pixels
+	pixelReleaseCh chan term.Position    // Channel for releasing pixels
+	pixelReceiveCh chan px               // Channel for receiving pixels
+	resizeCh       chan term.ResizeEvent // channel for listening resize events, so we can clip our coordinates
+	width          *int                  // width in percents, pointer indicates is optional
+	height         *int                  // height in percents, pointer indicates is optional
+	min            *term.Size            // The minimum size this object can be. Note that this can exist in the same time with width/height in percents // TODO : check new size (%) is not smaller than min allowed size
+	engine         term.Engine           // listen resize events
+	hidden         bool                  // Is this object currently hidden
 }
 
 // TODO : thinking maybe this should be a private constructor. Ask Page to give you a Rectangle and it will give it already populated and ready to use. For now (testing purposes), I'll leave it as it is.
@@ -204,15 +198,16 @@ func NewRectangle(ctx context.Context, opts ...RectangleOption) (*Rectangle, err
 	defStyle := style.NewStyle(style.WithBg(color.Default), style.WithFg(color.Default), style.WithAttrs(style.None))
 	r := &Rectangle{
 		id:             getNextRectId(),          // id for equality comparison
-		orientation:    style.Vertical,           // default orientation
 		aligned:        style.Begin,              // aligned top-left-corner
 		st:             *defStyle,                // default rectangle style (TODO : if default style is being used, no inheritance of style happens)
-		pixelAskCh:     make(chan term.Position), //
 		pixelReleaseCh: make(chan term.Position), //
 		pixelReceiveCh: make(chan px),            //
 		died:           make(chan struct{}),      // death announcement channel
-		topCorner:      term.NewPosition(-1, -1), // by default, rectangle is nowhere
-		bottomCorner:   term.NewPosition(-1, -1), // by default, rectangle is nowhere
+		root: root{
+			orientation:  style.Vertical,           // default orientation
+			topCorner:    term.NewPosition(-1, -1), // by default, rectangle is nowhere
+			bottomCorner: term.NewPosition(-1, -1), // by default, rectangle is nowhere
+		},
 	}
 
 	for _, opt := range opts {
@@ -222,45 +217,12 @@ func NewRectangle(ctx context.Context, opts ...RectangleOption) (*Rectangle, err
 	if r.pixelAskCh == nil {
 		return nil, errors.New("acquisition channel is mandatory")
 	}
-
-	// it's the root rectangle of the Page
-	if r.resizeDispatcher != nil {
-		r.resizeCh = make(chan term.ResizeEvent) // channel for listening resize events, so we can clip our coordinates
-		r.resizeDispatcher.Register(r)
-		log.Printf("orientation %q alignment %q", r.orientation, r.aligned)
-		r.topCorner.Column = 0
-		r.topCorner.Row = 0
-		if r.min == nil && r.Invalid() {
-			return nil, errors.New("minimum size has to be provided if bottom corner is not")
-		} else { // take the size from minimum size
-			if r.bottomCorner.Column == -1 {
-				r.bottomCorner.Column = r.min.Width
-			}
-			if r.bottomCorner.Row == -1 {
-				r.bottomCorner.Row = r.min.Height
-			}
-		}
-
-		r.makePixels()
-
-		go func() {
-			log.Println("mounted resize listener")
-			for {
-				select {
-				case <-ctx.Done():
-					log.Println("context is done : returning from resize listener")
-					return
-				case ev := <-r.resizeCh:
-					log.Println("resize event received")
-					r.Resize(ev.Size())
-				}
-			}
-		}()
+	if r.min == nil && r.Invalid() {
+		return nil, errors.New("declared rectangle is outside the screen")
 	}
 
 	// all ok, listening for context.Done to exit
 	go func() {
-		log.Println("listening for pixels requests")
 		for {
 			select {
 			case <-ctx.Done():
@@ -274,39 +236,6 @@ func NewRectangle(ctx context.Context, opts ...RectangleOption) (*Rectangle, err
 		}
 	}()
 	return r, nil
-}
-
-// makePixels
-func (r *Rectangle) makePixels() {
-	r.pxs = make(map[int]px)
-	r.pixels = make([]term.PixelGetter, 0)
-	columns := r.bottomCorner.Column - r.topCorner.Column
-	rows := r.bottomCorner.Row - r.topCorner.Row
-	log.Printf("root rectangle %04d x %04d", rows, columns)
-	switch r.orientation {
-	case style.Vertical:
-		r.rows = make([][]px, rows)
-		for row := 0; row < rows; row++ {
-			r.rows[row] = make([]px, columns)
-			for column := 0; column < columns; column++ {
-				pixel := newPixel(column, row)
-				r.pxs[pixel.PositionHash()] = pixel
-				r.pixels = append(r.pixels, &pixel)
-				r.rows[row][column] = pixel
-			}
-		}
-	case style.Horizontal:
-		r.cols = make([][]px, columns)
-		for column := 0; column < columns; column++ {
-			r.cols[column] = make([]px, rows)
-			for row := 0; row < rows; row++ {
-				pixel := newPixel(column, row)
-				r.pxs[pixel.PositionHash()] = pixel
-				r.pixels = append(r.pixels, &pixel)
-				r.cols[row][column] = pixel
-			}
-		}
-	}
 }
 
 // DyingChan implementation of term.Death interface, listened in core for waiting graceful shutdown
@@ -438,19 +367,19 @@ func (r *Rectangle) SetChildren(children ...*Rectangle) {
 
 func (r *Rectangle) invalidateSize() {
 	rectSize := r.Size()
-	log.Printf("%03d rows %03d colums", rectSize.Height, rectSize.Width)
+	log.Printf("%03d rows %03d columns", rectSize.Rows, rectSize.Columns)
 	switch r.orientation {
 	case style.Vertical:
 		log.Println("Vertical (ROWS)")
-		r.rows = make([][]px, rectSize.Height)
-		for row := 0; row < rectSize.Height; row++ {
-			r.rows[row] = make([]px, rectSize.Width)
+		r.rows = make(PixelsMatrix, rectSize.Rows)
+		for row := 0; row < rectSize.Rows; row++ {
+			r.rows[row] = make(Pixels, rectSize.Columns)
 		}
 	case style.Horizontal:
 		log.Println("Horizontal (COLUMNS)")
-		r.cols = make([][]px, rectSize.Width)
-		for col := 0; col < rectSize.Width; col++ {
-			r.cols[col] = make([]px, rectSize.Height)
+		r.cols = make(PixelsMatrix, rectSize.Columns)
+		for col := 0; col < rectSize.Columns; col++ {
+			r.cols[col] = make(Pixels, rectSize.Rows)
 		}
 	default:
 		// return nil, errors.New("orientation must be horizontal (rows) or vertical (columns)")
@@ -459,36 +388,6 @@ func (r *Rectangle) invalidateSize() {
 
 func (r *Rectangle) childRemoved() {
 
-}
-
-// --- TODO : fix me
-
-// Resize on a rectangle updates the new size of this object.
-// If it has a stroke width this will cause it to Refresh.
-func (r *Rectangle) Resize(size *term.Size) {
-	log.Printf("new width x height = %04d x %04d", size.Width, size.Height)
-	hasWidthPercent := r.width != nil
-	hasHeightPercent := r.height != nil
-	if hasWidthPercent || hasHeightPercent {
-		widthDiff := 0
-		//ps := r.children.Size()
-		if hasWidthPercent {
-			//	newWidth := ps.Width * (*r.width) / 100 // 30% from 100 pxs
-			//	widthDiff = newWidth - r.bottomCorner.Column
-			//	r.bottomCorner.Column = newWidth
-		}
-		heightDiff := 0
-		if hasHeightPercent {
-			//	newHeight := ps.Height * (*r.height) / 100
-			//	heightDiff = newHeight - r.bottomCorner.Row
-			//	r.bottomCorner.Row = newHeight
-		}
-		if !r.hidden {
-			// TODO : acquire new pixels
-			_ = widthDiff  // might be negative => release pixels
-			_ = heightDiff // might be negative => release pixels
-		}
-	}
 }
 
 func (r *Rectangle) acquirePositions() {

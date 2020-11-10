@@ -28,7 +28,7 @@ type EventResize struct {
 
 // NewResizeEvent
 func NewResizeEvent(cols, rows int) *EventResize {
-	return &EventResize{size: &term.Size{Width: cols, Height: rows}}
+	return &EventResize{size: &term.Size{Columns: cols, Rows: rows}}
 }
 
 // Size

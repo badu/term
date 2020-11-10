@@ -80,7 +80,7 @@ func (l *Line) Size() *term.Size {
 
 // Resize sets a new bottom-right position for the line object and it will then be refreshed.
 func (l *Line) Resize(size term.Size) {
-	newPos := term.NewPosition(l.topLeft.Column+size.Height, l.topLeft.Row+size.Width)
+	newPos := term.NewPosition(l.topLeft.Column+size.Rows, l.topLeft.Row+size.Columns)
 	l.bottomRight = newPos
 	l.acquirePositions()
 }
@@ -94,7 +94,7 @@ func (l *Line) Position() *term.Position {
 func (l *Line) Move(pos *term.Position) {
 	size := l.Size()
 	l.topLeft = pos
-	newPos := term.NewPosition(l.topLeft.Column+size.Height, l.topLeft.Row+size.Width)
+	newPos := term.NewPosition(l.topLeft.Column+size.Rows, l.topLeft.Row+size.Columns)
 	l.bottomRight = newPos
 }
 

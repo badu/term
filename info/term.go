@@ -940,8 +940,8 @@ func (t *Commander) PutDisableMouse(w io.Writer) {
 // MakeGoToCache - caches goto commands
 func (t *Commander) MakeGoToCache(size *term.Size, hashFn func(column, row int) int) {
 	t.bGotos = &gotoCache{mapb: make(map[int][]byte)}
-	for col := 0; col < size.Width; col++ {
-		for row := 0; row < size.Height; row++ {
+	for col := 0; col < size.Columns; col++ {
+		for row := 0; row < size.Rows; row++ {
 			gotoStr := t.TParam(t.SetCursor, row, col)
 			hash := hashFn(col, row)
 			if _, ok := t.bGotos.mapb[hash]; ok {

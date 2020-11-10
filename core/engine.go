@@ -222,6 +222,14 @@ func (c *core) Start(ctx context.Context) error {
 	return err
 }
 
+// HasMouse returns true if there is any mouse support
+func (c *core) HasMouse() bool {
+	c.Lock()
+	defer c.Unlock()
+
+	return c.comm.HasMouse
+}
+
 // ResizeDispatcher implements the term.Engine interface, exposes so call to Register(r Receiver) method
 func (c *core) ResizeDispatcher() term.ResizeDispatcher {
 	c.Lock()
@@ -339,7 +347,7 @@ func (c *core) ActivePixels(pixels []term.PixelGetter) {
 	c.Unlock() // Redraw locks it again
 	c.Redraw(pixels)
 	if Debug {
-		log.Printf("[core] %d pixels were drawn [%03d x %03d]", len(pixels), c.size.Width, c.size.Height)
+		log.Printf("[core] %d pixels were drawn [%03d x %03d]", len(pixels), c.size.Columns, c.size.Rows)
 	}
 }
 
@@ -420,10 +428,10 @@ func (c *core) resize(w, h int, shutdown bool) {
 	if shutdown && c.pixCancel != nil {
 		c.pixCancel() // cancel context if we're shutting down and cancellation was declared
 	}
-	if c.size != nil && (c.size.Height == h && c.size.Width == w) {
+	if c.size != nil && (c.size.Rows == h && c.size.Columns == w) {
 		return
 	}
-	c.size = &term.Size{Width: w, Height: h}
+	c.size = &term.Size{Columns: w, Rows: h}
 	mp := term.NewPosition(w, h)
 	c.maximumPosition = mp
 	c.comm.MakeGoToCache(c.size, term.Hash)
@@ -527,13 +535,13 @@ func (c *core) drawPixels(w io.Writer, pixels ...term.PixelGetter) {
 
 		// TODO : implement width checking for too wide to fit or chars not being able to display
 		// str := string(runes)
-		// if pixel.Width() > 1 && str == "?" {
+		// if pixel.Columns() > 1 && str == "?" {
 		// No FullWidth character support
 		// str = "? "
 		// }
-		// if pixel.Position().X > c.size.Width-pixel.Width() {
+		// if pixel.Position().X > c.size.Columns-pixel.Columns() {
 		// if Debug {
-		//	log.Printf("too wide to fit : %d [%d]", pixel.Width(), c.size.Width)
+		//	log.Printf("too wide to fit : %d [%d]", pixel.Columns(), c.size.Columns)
 		// }
 		// str = " " // too wide to fit; emit a single space instead
 		// }

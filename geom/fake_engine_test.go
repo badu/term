@@ -51,7 +51,9 @@ func (e *FakeMouseDispatcher) Register(l term.MouseListener) {
 	go func() {
 		select {
 		case <-e.ctx.Done():
-			e.t.Log("[fake mouse dispatcher] context died : existing death listener")
+			if e.t != nil {
+				e.t.Log("[fake mouse dispatcher] context died : existing death listener")
+			}
 			return
 		case <-l.DyingChan(): // wait for death announcement
 			e.t.Log("component died")
@@ -70,7 +72,7 @@ func (e *FakeMouseDispatcher) Register(l term.MouseListener) {
 func (e *FakeMouseDispatcher) DyingChan() chan struct{}            { return nil }
 func (e *FakeMouseDispatcher) ResizeListen() chan term.ResizeEvent { return nil }
 func (e *FakeMouseDispatcher) InChan() chan []byte                 { return nil }
-func (e *FakeMouseDispatcher) LifeCycle(ctx context.Context)       {}
+func (e *FakeMouseDispatcher) LifeCycle(ctx context.Context)       { e.ctx = ctx }
 func (e *FakeMouseDispatcher) Enable()                             {}
 func (e *FakeMouseDispatcher) Disable()                            {}
 func (e *FakeMouseDispatcher) Dispatch(col, row int, button term.ButtonMask, mod term.ModMask) {
@@ -139,7 +141,7 @@ func (e *FakeKeyDispatcher) Register(l term.KeyListener) {
 func (e *FakeKeyDispatcher) DyingChan() chan struct{}      { return nil }
 func (e *FakeKeyDispatcher) HasKey(k term.Key) bool        { return false }
 func (e *FakeKeyDispatcher) InChan() chan []byte           { return nil }
-func (e *FakeKeyDispatcher) LifeCycle(ctx context.Context) {}
+func (e *FakeKeyDispatcher) LifeCycle(ctx context.Context) { e.ctx = ctx }
 func (e *FakeKeyDispatcher) Dispatch(k term.Key, ch rune, mod term.ModMask) {
 	ev := key.NewEvent(k, ch, mod) // one event for everyone
 	for _, cons := range e.receivers {
@@ -165,7 +167,8 @@ type FakeResizeDispatcher struct {
 	receivers resizeChannels
 }
 
-func (e *FakeResizeDispatcher) DyingChan() chan struct{} { return nil }
+func (e *FakeResizeDispatcher) LifeCycle(ctx context.Context) { e.ctx = ctx }
+func (e *FakeResizeDispatcher) DyingChan() chan struct{}      { return nil }
 func (e *FakeResizeDispatcher) Register(l term.ResizeListener) {
 	if e.ctx == nil {
 		e.t.Error("context not set : cannot listen context.Done()")
@@ -206,7 +209,7 @@ func (e *FakeResizeDispatcher) Register(l term.ResizeListener) {
 }
 func (e *FakeResizeDispatcher) Dispatch(newCols, newRows int) {
 	ev := core.NewResizeEvent(newCols, newRows)
-	e.t.Logf("dispatching new size %04d x %04d (cols x rows) to %d receivers", newCols, newRows, len(e.receivers))
+	e.t.Logf("dispatching new size %04d cols x %04d rows to %d receivers", newCols, newRows, len(e.receivers))
 	for _, cons := range e.receivers {
 		cons <- ev
 	}
@@ -216,19 +219,20 @@ func (e *FakeResizeDispatcher) Dispatch(newCols, newRows int) {
 type FakeEngine struct {
 	t             *testing.T
 	Columns, Rows int
+	ctx           context.Context
 	MD            *FakeMouseDispatcher
 	KD            *FakeKeyDispatcher
 	RD            *FakeResizeDispatcher
 }
 
-func NewFakeEngine(t *testing.T, ctx context.Context, cols, rows int) *FakeEngine {
+func NewFakeEngine(t *testing.T, cols, rows int) *FakeEngine {
 	return &FakeEngine{
 		t:       t,
 		Columns: cols,
 		Rows:    rows,
-		MD:      &FakeMouseDispatcher{t: t, ctx: ctx},
-		KD:      &FakeKeyDispatcher{t: t, ctx: ctx},
-		RD:      &FakeResizeDispatcher{t: t, ctx: ctx},
+		MD:      &FakeMouseDispatcher{t: t},
+		KD:      &FakeKeyDispatcher{t: t},
+		RD:      &FakeResizeDispatcher{t: t},
 	}
 }
 
@@ -237,6 +241,10 @@ func (e *FakeEngine) DyingChan() chan struct{} {
 }
 
 func (e *FakeEngine) Start(ctx context.Context) error {
+	e.ctx = ctx
+	e.MD.LifeCycle(ctx)
+	e.KD.LifeCycle(ctx)
+	e.RD.LifeCycle(ctx)
 	return nil
 }
 
@@ -270,8 +278,8 @@ func (e *FakeEngine) NumColors() int {
 
 func (e *FakeEngine) Size() *term.Size {
 	return &term.Size{
-		Width:  e.Columns,
-		Height: e.Rows,
+		Columns: e.Columns,
+		Rows:    e.Rows,
 	}
 }
 
@@ -308,3 +316,5 @@ func (e *FakeEngine) Cursor() *term.Position {
 }
 
 func (e *FakeEngine) Clear() {}
+
+func (e *FakeEngine) HasMouse() bool { return true }

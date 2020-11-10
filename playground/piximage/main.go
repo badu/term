@@ -61,12 +61,12 @@ func (p *page) adjustAndRegisterPixels(ev term.ResizeEvent) {
 
 func (p *page) init() {
 	getters := make([]term.PixelGetter, 0)
-	p.pixels = make([][]term.Pixel, p.size.Width)
+	p.pixels = make([][]term.Pixel, p.size.Columns)
 	imageColumn := p.imageOffsetColumn
-	for column := 0; column < p.size.Width; column++ {
+	for column := 0; column < p.size.Columns; column++ {
 		imageRow := p.imageOffsetRow
-		p.pixels[column] = make([]term.Pixel, p.size.Height)
-		for row := 0; row < p.size.Height; row++ {
+		p.pixels[column] = make([]term.Pixel, p.size.Rows)
+		for row := 0; row < p.size.Rows; row++ {
 			fg := geom.WithForeground(p.image[imageColumn][imageRow][0])
 			bg := geom.WithBackground(p.image[imageColumn][imageRow][1])
 			px, _ := geom.NewPixel(geom.WithRune('▀'), fg, bg, geom.WithPosition(term.NewPosition(column, row)))
@@ -81,9 +81,9 @@ func (p *page) init() {
 
 func (p *page) redraw() {
 	imageRow := p.imageOffsetRow
-	for row := 0; row < p.size.Height; row++ {
+	for row := 0; row < p.size.Rows; row++ {
 		imageColumn := p.imageOffsetColumn
-		for column := 0; column < p.size.Width; column++ {
+		for column := 0; column < p.size.Columns; column++ {
 			p.pixels[column][row].SetFgBg(p.image[imageColumn][imageRow][0], p.image[imageColumn][imageRow][1])
 			imageColumn++
 		}
@@ -99,13 +99,13 @@ func (p *page) lifeCycle(ctx context.Context, cancel func()) {
 			p.size = p.engine.Size()
 			p.engine.HideCursor() // hide cursor
 			p.engine.Clear()      // clear
-			log.Printf("initial screen size w = %03d h = %03d", p.size.Width, p.size.Height)
+			log.Printf("initial screen size w = %03d h = %03d", p.size.Columns, p.size.Rows)
 			imageWidth := len(p.image)
 			imageHeight := len(p.image[0])
-			p.imageOffsetRow = (imageHeight - p.size.Height) / 2
-			p.imageOffsetColumn = (imageWidth - p.size.Width) / 2
+			p.imageOffsetRow = (imageHeight - p.size.Rows) / 2
+			p.imageOffsetColumn = (imageWidth - p.size.Columns) / 2
 			log.Printf("loaded image size %04d,%04d", imageWidth, imageHeight)
-			log.Printf("displaying %04d,%04d -> %04d,%04d", p.imageOffsetRow, p.imageOffsetColumn, p.imageOffsetRow+p.size.Width, p.imageOffsetColumn+p.size.Height)
+			log.Printf("displaying %04d,%04d -> %04d,%04d", p.imageOffsetRow, p.imageOffsetColumn, p.imageOffsetRow+p.size.Columns, p.imageOffsetColumn+p.size.Rows)
 			p.init()
 			go func() {
 				escapeCount := 0
@@ -131,8 +131,8 @@ func (p *page) lifeCycle(ctx context.Context, cancel func()) {
 								p.redraw()
 							}
 						case key.Down:
-							log.Printf("going down 10 px ? %04d,%04d", p.imageOffsetRow+p.size.Height+10, imageHeight)
-							if p.imageOffsetRow+p.size.Height+10 < imageHeight {
+							log.Printf("going down 10 px ? %04d,%04d", p.imageOffsetRow+p.size.Rows+10, imageHeight)
+							if p.imageOffsetRow+p.size.Rows+10 < imageHeight {
 								p.imageOffsetRow += 10
 								p.redraw()
 							}
@@ -143,8 +143,8 @@ func (p *page) lifeCycle(ctx context.Context, cancel func()) {
 								p.redraw()
 							}
 						case key.Right:
-							log.Printf("going right 10 px ? %04d,%04d", p.imageOffsetColumn+p.size.Width+10, imageWidth)
-							if p.imageOffsetColumn+p.size.Width+10 < imageWidth {
+							log.Printf("going right 10 px ? %04d,%04d", p.imageOffsetColumn+p.size.Columns+10, imageWidth)
+							if p.imageOffsetColumn+p.size.Columns+10 < imageWidth {
 								p.imageOffsetColumn += 10
 								p.redraw()
 							}

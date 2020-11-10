@@ -58,7 +58,8 @@ func TestRectangleWithPage(t *testing.T) {
 	initLog.InitLogger()
 	log.Print("starting test")
 	ctx, cancel := context.WithCancel(context.Background())
-	fakeEngine := NewFakeEngine(t, ctx, 132, 43)
+	fakeEngine := NewFakeEngine(t, 132, 43)
+	fakeEngine.Start(ctx)
 	pageCtx, pageCancel := context.WithCancel(ctx)
 	p, err := geom.NewPage(pageCtx, geom.WithEngine(fakeEngine))
 	if err != nil {

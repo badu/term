@@ -32,7 +32,7 @@ type Tree struct {
 }
 
 // newTree
-func NewTree(ctx context.Context, cols, rows int, ch chan term.Position, oriented style.Orientation, core term.ResizeDispatcher) Tree {
+func NewTree(ctx context.Context, cols, rows int, ch chan term.Position, oriented style.Orientation, core term.Engine) Tree {
 	var opts []RectangleOption
 	opts = append(opts, WithBottomCorner(cols, rows))
 	opts = append(opts, WithTopCorner(0, 0))

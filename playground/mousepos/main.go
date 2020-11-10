@@ -72,11 +72,11 @@ type listener struct {
 }
 
 func (r *listener) init(size *term.Size) {
-	r.refs = make([][]term.Pixel, size.Width)
+	r.refs = make([][]term.Pixel, size.Columns)
 	var getters = make([]term.PixelGetter, 0)
-	for column := 0; column < size.Width; column++ {
-		r.refs[column] = make([]term.Pixel, size.Height)
-		for row := 0; row < size.Height; row++ {
+	for column := 0; column < size.Columns; column++ {
+		r.refs[column] = make([]term.Pixel, size.Rows)
+		for row := 0; row < size.Rows; row++ {
 			var px term.Pixel
 			if column%2 == 0 {
 				px, _ = geom.NewPixel(geom.WithPosition(term.NewPosition(column, row)))
@@ -162,7 +162,7 @@ func (r *listener) lifeCycle(ctx context.Context, cancel func()) {
 		r.emitStr(2, 4, white, mouseStr)
 		r.emitStr(2, 5, white, buttonsStr)
 		r.emitStr(2, 6, white, keysStr)
-		log.Printf("[app] initial w = %03d h = %03d", size.Width, size.Height)
+		log.Printf("[app] initial w = %03d h = %03d", size.Columns, size.Rows)
 		pixelsToCleanup := make([]term.PixelSetter, 0)
 		for {
 			if hasChange {

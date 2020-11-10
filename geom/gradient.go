@@ -101,7 +101,7 @@ func (l *LinearGradient) MinSize() *term.Size {
 	l.RLock()
 	defer l.RUnlock()
 
-	if l.min.Width == 0 && l.min.Height == 0 {
+	if l.min.Columns == 0 && l.min.Rows == 0 {
 		return term.NewSize(1, 1)
 	}
 
@@ -282,7 +282,7 @@ func (r *RadialGradient) MinSize() *term.Size {
 	r.RLock()
 	defer r.RUnlock()
 
-	if r.min.Width == 0 && r.min.Height == 0 {
+	if r.min.Columns == 0 && r.min.Rows == 0 {
 		return term.NewSize(1, 1)
 	}
 

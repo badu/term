@@ -37,6 +37,7 @@ func UnHashNeg(hash int) (int, int) {
 	return column, row
 }
 
+// NewPosition
 func NewPosition(column, row int) *Position {
 	return &Position{
 		Row:    row,
@@ -45,26 +46,32 @@ func NewPosition(column, row int) *Position {
 	}
 }
 
+// Position hash
 func (p *Position) Hash() int {
 	return p.hash
 }
 
+// UpdateHash - refreshes the hash on row/column change
 func (p *Position) UpdateHash() {
 	p.hash = Hash(p.Column, p.Row)
 }
 
+// Stringer implementation
 func (p Position) String() string {
 	return "col:" + strconv.Itoa(p.Column) + ", row:" + strconv.Itoa(p.Row)
 }
 
+// Width
 func Width(p1, p2 *Position) int {
 	return Abs(p1.Column-p2.Column) + 1
 }
 
+// Height
 func Height(p1, p2 *Position) int {
 	return Abs(p1.Row-p2.Row) + 1
 }
 
+// Center
 func Center(p1, p2 *Position) *Position {
 	rows := Height(p1, p2)
 	columns := Width(p1, p2)

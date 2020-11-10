@@ -3,6 +3,7 @@ package geom
 import (
 	"errors"
 	"log"
+	"strconv"
 	"unicode/utf8"
 
 	"github.com/badu/term"
@@ -87,11 +88,23 @@ func (p *px) Style() (color.Color, color.Color, style.Mask) {
 
 // HasUnicode
 func (p *px) HasUnicode() bool {
+	if Debug {
+		return true // works in convention with code below
+	}
 	return p.unicode != nil
 }
 
 // Unicode
 func (p *px) Unicode() *term.Unicode {
+	if Debug {
+		// just for tests, we return the row column in unicode
+		result := term.Unicode{}
+		result = append(result, []rune{'c', 'o', 'l', ':'}...)
+		result = append(result, []rune(strconv.Itoa(p.pos.Column))...)
+		result = append(result, []rune{',', 'r', 'o', 'w', ':'}...)
+		result = append(result, []rune(strconv.Itoa(p.pos.Row))...)
+		return &result
+	}
 	return p.unicode
 }
 
@@ -298,3 +311,7 @@ func newPixel(col, row int) px {
 	}
 	return res
 }
+
+type Pixels []px
+
+type PixelsMatrix []Pixels

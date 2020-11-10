@@ -130,6 +130,7 @@ type Engine interface {
 	HideCursor()                                 // hides the cursor
 	Cursor() *Position                           // returns the cursor current position
 	Clear()                                      // cleans the screen
+	HasMouse() bool                              // returns true if mouse support is available
 }
 
 type Unicode []rune

@@ -1,8 +1,6 @@
 package geom
 
 import (
-	"log"
-
 	"github.com/badu/term"
 	"github.com/badu/term/color"
 	"github.com/badu/term/style"
@@ -28,14 +26,6 @@ func (r *Rectangle) PixelReceiverChan() chan px {
 	return r.pixelReceiveCh
 }
 
-func (r *Rectangle) HasRows() bool {
-	return r.orientation == style.Vertical
-}
-
-func (r *Rectangle) HasColumns() bool {
-	return r.orientation == style.Horizontal
-}
-
 // CurrentSize returns the current size of this rectangle object
 func (r *Rectangle) Size() *term.Size {
 	return term.NewSize(term.Width(r.topCorner, r.bottomCorner), term.Height(r.topCorner, r.bottomCorner))
@@ -59,60 +49,6 @@ func (r *Rectangle) Center() *term.Position {
 // HasPerfectCenter - allows the caller of Center not to fool themselves (e.g. center is shifted towards top right)
 func (r *Rectangle) HasPerfectCenter() bool {
 	return term.Width(r.topCorner, r.bottomCorner)%2 == 1 && term.Height(r.topCorner, r.bottomCorner)%2 == 1
-}
-
-// Row returns the row of pixels at index (absolute, starting with zero)
-// if Rectangle is vertical oriented (columns), returns nothing (shame on caller)
-func (r *Rectangle) Row(index int) []px {
-	if r.HasColumns() {
-		log.Println("bad call to Rectangle.Row : orientation is not vertical (rows)")
-		return nil
-	}
-	if index <= 0 {
-		log.Println("bad call to Rectangle.Row : bad index")
-		return nil
-	}
-	if index-1 >= len(r.rows) {
-		log.Println("bad call to Rectangle.Row : index outside number of rows")
-		return nil
-	}
-	return r.rows[index-1]
-}
-
-// NumRows
-func (r *Rectangle) NumRows() int {
-	if r.HasColumns() {
-		log.Println("bad call to Rectangle.NumRows : orientation is not vertical (rows)")
-		return 0
-	}
-	return len(r.rows)
-}
-
-// Column returns the column of pixels at index (absolute, starting with zero)
-// if Rectangle is horizontal oriented (rows), returns nothing (shame on caller)
-func (r *Rectangle) Column(index int) []px {
-	if r.HasRows() {
-		log.Println("bad call to Rectangle.Column : orientation is not horizontal (columns)")
-		return nil
-	}
-	if index <= 0 {
-		log.Println("bad call to Rectangle.Column : bad index")
-		return nil
-	}
-	if index-1 > len(r.cols) {
-		log.Println("bad call to Rectangle.Column : index outside number of columns")
-		return nil
-	}
-	return r.cols[index-1]
-}
-
-// NumColumns
-func (r *Rectangle) NumColumns() int {
-	if r.HasRows() {
-		log.Println("bad call to Rectangle.NumColumns : orientation is not horizontal (columns)")
-		return 0
-	}
-	return len(r.cols)
 }
 
 // IsVisible returns true if this object is visible, false otherwise

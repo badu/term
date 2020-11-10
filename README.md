@@ -74,6 +74,7 @@ Constructor returns an interface. The `Engine` interface:
 * `Cursor() *term.Position` - returns current input cursor position.
 * `Clear()` - clears the screen.
 * `Style() Style` - returns the terminal styles and palette. Style is an interface.
+* `HasMouse() bool` - returns true if there is mouse support available.
  
 `ResizeEvent` is an interface has only one method `Size() Size` and Size has - of course - Width and Height properties. 
 

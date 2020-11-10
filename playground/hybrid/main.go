@@ -49,7 +49,7 @@ func (r *listener) lifeCycle(ctx context.Context) {
 			case ev := <-r.incomingKey:
 				log.Printf("[hybrid] key : name=%s key=%c modname=%s", ev.Name(), ev.Rune(), ev.ModName())
 			case ev := <-r.incomingResize:
-				log.Printf("[hybrid] resize : width = %d  height = %d", ev.Size().Width, ev.Size().Height)
+				log.Printf("[hybrid] resize : width = %d  height = %d", ev.Size().Columns, ev.Size().Rows)
 			}
 		}
 	}()
