@@ -2,13 +2,19 @@ package main
 
 import (
 	"context"
+	"flag"
+	"fmt"
 	"log"
 	"os"
+	"runtime"
+	"runtime/pprof"
 	"time"
 
 	"github.com/badu/term"
 	"github.com/badu/term/core"
 	initLog "github.com/badu/term/log"
+	"github.com/shirou/gopsutil/cpu"
+	"github.com/shirou/gopsutil/mem"
 )
 
 type listener struct {
@@ -49,8 +55,26 @@ func NewReceiver(ctx context.Context) term.KeyListener {
 	return receiver
 }
 
+// go run main.go -cpuprof cpu.out -memprof mem.out
+var cpuprofile = flag.String("cpuprof", "", "write cpu profile to `file`")
+var memprofile = flag.String("memprof", "", "write memory profile to `file`")
+
 func main() {
+
 	initLog.InitLogger()
+
+	flag.Parse()
+	if *cpuprofile != "" {
+		f, err := os.Create(*cpuprofile)
+		if err != nil {
+			log.Fatal("could not create CPU profile: ", err)
+		}
+		defer f.Close() // error handling omitted for example
+		if err := pprof.StartCPUProfile(f); err != nil {
+			log.Fatal("could not start CPU profile: ", err)
+		}
+		defer pprof.StopCPUProfile()
+	}
 
 	engine, err := core.NewCore(os.Getenv("TERM"), core.WithFinalizer(func() {
 		log.Println("[key] core finalizer called")
@@ -73,9 +97,17 @@ func main() {
 	seconds := 10
 	wait := 11 * time.Second
 	go func() {
+		percents, _ := cpu.Percent(time.Second, true)
+		v, _ := mem.VirtualMemory()
 		for seconds > 0 {
 			<-time.After(1 * time.Second)
-			log.Printf("[key] waiting %d seconds", seconds)
+			log.Printf("[key] waiting %d seconds\n", seconds)
+			msg := "[Processor]"
+			for idx, percent := range percents {
+				msg += fmt.Sprintf("[#%d: %.2f]", idx+1, percent)
+			}
+			log.Print(msg)
+			log.Printf("[Memory] Total: %v, Free:%v, UsedPercent:%f%%\n", v.Total, v.Free, v.UsedPercent)
 			seconds--
 			if seconds == 0 {
 				log.Println("[key] 0 seconds existing counting goroutine")
@@ -89,4 +121,17 @@ func main() {
 	log.Println("[key] waiting for engine to finalize correctly")
 	<-engine.DyingChan()
 	log.Println("[key] done.")
+
+	if *memprofile != "" {
+		f, err := os.Create(*memprofile)
+		if err != nil {
+			log.Fatal("could not create memory profile: ", err)
+		}
+		defer f.Close() // error handling omitted for example
+		runtime.GC()    // get up-to-date statistics
+		if err := pprof.WriteHeapProfile(f); err != nil {
+			log.Fatal("could not write memory profile: ", err)
+		}
+	}
+
 }

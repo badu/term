@@ -56,6 +56,16 @@ func (p *Position) UpdateHash() {
 	p.hash = Hash(p.Column, p.Row)
 }
 
+// PlusCols
+func (p *Position) PlusCols(plusColumns int) *Position {
+	return NewPosition(p.Column+plusColumns, p.Row)
+}
+
+// PlusRows
+func (p *Position) PlusRows(plusRows int) *Position {
+	return NewPosition(p.Column, p.Row+plusRows)
+}
+
 // Stringer implementation
 func (p Position) String() string {
 	return "col:" + strconv.Itoa(p.Column) + ", row:" + strconv.Itoa(p.Row)
@@ -71,11 +81,10 @@ func Height(p1, p2 *Position) int {
 	return Abs(p1.Row-p2.Row) + 1
 }
 
-// Center
+// Center : both parameters should be odd numbers
 func Center(p1, p2 *Position) *Position {
 	rows := Height(p1, p2)
 	columns := Width(p1, p2)
-	// assuming the caller knows what it's doing (both should be odd)
 	if columns%2 == 1 && rows%2 == 1 { // both are odd - center will be even (except 1,1 which doesn't have a center)
 		return NewPosition(columns>>1, rows>>1)
 	}

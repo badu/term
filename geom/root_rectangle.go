@@ -21,12 +21,14 @@ type RootRectangle interface {
 }
 
 type root struct {
-	orientation  style.Orientation // orientation dictates pixel slices above (rows or cols). Default orientation is style.Vertical
-	topCorner    *term.Position    // The current top corner of the Rectangle
-	bottomCorner *term.Position    // The current top corner of the Rectangle
-	pxs          map[int]px        // map[position_hash]pixel, for fast access to pixels
-	rows         PixelsMatrix      // when organized by rows, for fast access to rows
-	cols         PixelsMatrix      // when organized by cols, for fast access to columns
+	orientation  style.Orientation          // orientation dictates pixel slices above (rows or cols). Default orientation is style.Vertical
+	topCorner    *term.Position             // The current top corner of the Rectangle
+	bottomCorner *term.Position             // The current top corner of the Rectangle
+	pxs          map[int]px                 // map[position_hash]pixel, for fast access to pixels
+	rows         PixelsMatrix               // when organized by rows, for fast access to rows
+	cols         PixelsMatrix               // when organized by cols, for fast access to columns
+	Marks        *map[string]*term.Position // temporary, to figure it out
+	maxCol       int                        // temporary
 }
 
 // Orientation
@@ -37,11 +39,6 @@ func (r *root) Orientation() style.Orientation {
 // HasRows
 func (r *root) HasRows() bool {
 	return r.orientation == style.Vertical
-}
-
-// HasColumns
-func (r *root) HasColumns() bool {
-	return r.orientation == style.Horizontal
 }
 
 // Row returns the row of pixels at index (absolute, starting with zero)
@@ -110,6 +107,11 @@ func (r *root) Rows() PixelsMatrix {
 		return rotate(r.cols)
 	}
 	return r.rows
+}
+
+// HasColumns
+func (r *root) HasColumns() bool {
+	return r.orientation == style.Horizontal
 }
 
 // Column returns the column of pixels at index (absolute, starting with zero)

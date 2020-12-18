@@ -185,9 +185,6 @@ func NewCore(termEnv string, options ...Option) (term.Engine, error) {
 func (c *core) Start(ctx context.Context) error {
 	var err error
 	c.Once.Do(func() {
-		c.Lock()
-		defer c.Unlock()
-
 		c.ctx = ctx
 
 		if err = c.internalStart(); err != nil {

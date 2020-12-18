@@ -177,6 +177,7 @@ func (c *core) lifeCycle(ctx context.Context) {
 func (c *core) Register(r term.ResizeListener) {
 	c.Lock()
 	defer c.Unlock()
+
 	if c.ctx == nil {
 		if Debug {
 			log.Fatal("context not set : cannot listen context.Done()")
